@@ -1,0 +1,11 @@
+{
+  "name": "territory-engine",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --test 'test/*.test.js'"
+  },
+  "dependencies": {
+    "jsdom": "^30.0.1"
+  }
+}

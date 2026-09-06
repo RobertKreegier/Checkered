@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Boardworks — one engine, any grid game</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700;900&family=Karla:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./src/styles.css">
+</head>
+<body>
+<div id="app">
+  <div id="boardwrap">
+    <div id="zoombar">
+      <button id="zin" title="Zoom in">+</button>
+      <button id="zout" title="Zoom out">−</button>
+      <button id="zhome" title="Recentre">⌂</button>
+    </div>
+  </div>
+
+  <aside id="panel">
+    <div class="phead">
+      <h1 class="wordmark">Board<span>works</span></h1>
+      <div class="tagline">One engine · any game that fits a grid</div>
+    </div>
+    <div class="pbody" id="pbody"></div>
+    <div class="pfoot" id="pfoot"></div>
+  </aside>
+</div>
+
+<div class="veil" id="veil"><div class="modal" id="modal"></div></div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
