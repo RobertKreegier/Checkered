@@ -1,5 +1,5 @@
 {
-  "name": "territory-engine",
+  "name": "checkered",
   "version": "0.1.0",
   "type": "module",
   "scripts": {
@@ -7,5 +7,6 @@
   },
   "dependencies": {
     "jsdom": "^30.0.1"
-  }
+  },
+  "description": "A generic engine for games played on a grid."
 }

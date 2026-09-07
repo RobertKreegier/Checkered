@@ -31,7 +31,7 @@ process checklist barely change shape at all.
 ## File layout
 
 ```
-/territory-engine
+/checkered
   index.html              shell: ruleset picker, board mount, editor panels
   /src
     engine.js              generic game loop: turn order, undo, serialize,
@@ -232,6 +232,19 @@ never would have, which was the point of doing it before building the UI:
 - **`configSpec` needed a `text` type**, which only surfaced once a
   ruleset had a non-numeric setting to expose.
 
+## Naming
+
+The engine is **Checkered**. The games it hosts are **Territory**,
+**Checkers**, and **Chess**.
+
+Keeping those names distinct is deliberate, not decoration. The engine
+does not know what game it is hosting — guard tests read `board.js` and
+`main.js` and fail the build if either mentions a game's vocabulary. If
+the engine shared a name with one of its rulesets, every conversation
+about "Checkered" would need a clarifier about which layer was meant,
+and the layer that is hardest to keep honest is exactly the one that
+would blur.
+
 ## The generic UI
 
 `main.js` must work for any registered ruleset without knowing which one
@@ -325,3 +338,26 @@ learns a game's vocabulary. (This came out of a guard test catching
   renderer or the UI learns a game's vocabulary; one of them caught
   `main.js` reading `player.armory`, which is why seats now carry
   neutral `colors.primary` / `colors.accent`. Suite at 174 tests.
+- **2026-09-01 · index.html, main.js, styles.css** — The wordmark now
+  reads "Checkered <Game>", taking the second half from the registry
+  entry rather than from anything the engine knows. Clicking it (or
+  hitting Enter on it) offers to leave the game and return to the
+  picker; a finished game skips the prompt, since nothing is at stake.
+  New tagline. Fixed a drag-selection bug: counters and labels are real
+  text nodes, so panning swept a selection across every square it
+  crossed — the board now sets `user-select: none`.
+  Two bugs surfaced while testing this. `modal.el` was resolved only in
+  `boot()`, so any dialog opened before boot died on a null and showed a
+  blank page; it now resolves lazily and re-resolves if detached. And
+  `styles.css` hardcoded `.piece.light` / `.piece.dark` to fixed greys,
+  which silently overrode the seat colors a ruleset passes down through
+  `describeCell` — the stylesheet was quietly ignoring the contract.
+  `.piece` now takes `var(--unit-color)` and the light/dark classes only
+  decide which way the text shadow falls. Guard test added. Suite at 187.
+- **2026-08-31 · project-wide** — Renamed the engine from Boardworks to
+  **Checkered**: directory, `package.json`, page title, wordmark, and
+  the theme's localStorage key. The Territory ruleset keeps its name, so
+  the engine and its rulesets stay nameable apart (see Naming above).
+  `theme.js` reads the old key once and migrates it, so custom CSS
+  written before the rename isn't silently lost; the migration and the
+  storage-unavailable fallback are both tested. Suite at 179 tests.

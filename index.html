@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Boardworks — one engine, any grid game</title>
+<title>Checkered — one engine, any grid game</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700;900&family=Karla:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -21,8 +21,9 @@
 
   <aside id="panel">
     <div class="phead">
-      <h1 class="wordmark">Board<span>works</span></h1>
-      <div class="tagline">One engine · any game that fits a grid</div>
+      <h1 class="wordmark" id="wordmark" role="button" tabindex="0"
+          title="Leave this game and choose another">Checkered <span id="gamename"></span></h1>
+      <div class="tagline">An infinite board game engine made with Claude AI</div>
     </div>
     <div class="pbody" id="pbody"></div>
     <div class="pfoot" id="pfoot"></div>
