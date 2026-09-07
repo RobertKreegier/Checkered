@@ -88,8 +88,8 @@ body {
  * reads as a wash with the excluded ground showing through as holes,
  * rather than a few hundred dashed boxes competing for attention. */
 .cell.hl-place {
-  background: rgba(200, 162, 74, .06);
-  box-shadow: inset 0 0 0 1px rgba(200, 162, 74, .20);
+  background: rgba(200, 162, 74, .09);
+  box-shadow: inset 0 0 0 1px rgba(200, 162, 74, .28);
 }
 .cell.hl-last { box-shadow: inset 0 0 0 2px rgba(200, 162, 74, .35); }
 
@@ -189,8 +189,13 @@ body {
   border-top: 1px dotted rgba(231, 237, 233, .38);
 }
 
-/* Nobody's: drawn hollow, so unclaimed ground reads differently. */
-.piece.neutral .chip { opacity: .75; filter: saturate(.35); }
+/* Nobody's. Desaturated so it can't be mistaken for a player's colour,
+ * but not dimmed into the background: since the ground is scattered
+ * before anyone places, these are the first thing a player reads. */
+.piece.neutral .chip {
+  --chip-face: #93A8A1;
+  opacity: 1;
+}
 .piece.loose .chip {
   background: none;
   border: 1px dashed var(--armory-color, var(--brass));

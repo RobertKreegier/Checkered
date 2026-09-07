@@ -84,7 +84,7 @@ function openPicker() {
     for (let n = chosen.minPlayers; n <= chosen.maxPlayers; n++) range.push(n);
 
     modal(`
-      <h2>Check<span>ered</span></h2>
+      <h2>Checkered</h2>
       <p class="sub">One engine · any game that fits a grid</p>
       <div class="eyebrow">Choose a game</div>
       ${games.map(g => `

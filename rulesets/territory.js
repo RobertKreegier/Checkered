@@ -241,30 +241,42 @@ function moveTargets(s, x, y, nU, nA) {
 
 /* ---------- placement ---------- */
 function canPlace(s, x, y) {
-  if (at(s, x, y)) return false;
+  if (at(s, x, y)) return false;                 // something already stands here
+  // Spacing is about keeping rulers apart, so it is measured against
+  // the other camps only. Measuring it against everything on the board
+  // would fence players away from the neutral stacks, when choosing a
+  // start near the resources you want is the whole point of placing
+  // after the ground has been scattered.
   const gap = cfg(s).campSpacing;
-  for (const k of Object.keys(s.board)) {
-    const [i, j] = un(k);
-    if (Math.max(Math.abs(i - x), Math.abs(j - y)) < gap) return false;
+  for (const [sx, sy] of s.starts) {
+    if (Math.max(Math.abs(sx - x), Math.abs(sy - y)) < gap) return false;
   }
   return true;
 }
 
 /* ---------- neutrals ---------- */
+/**
+ * Strew the opening ground with neutral stacks and loose armory.
+ *
+ * This runs before anyone places a camp, so the players can see what is
+ * out there and choose a start with the resources in mind — where to sit
+ * becomes a real decision rather than a blind one. It also means the
+ * scatter can't be anchored on the camps, because there aren't any yet;
+ * it spreads around the origin instead, and `scatterClear` keeps the
+ * middle open so the board doesn't begin choked at its centre.
+ */
 function scatterNeutrals(s, rng, log) {
-  const c = cfg(s), starts = s.starts;
-  if (!starts.length) return;
+  const c = cfg(s);
   const R = c.scatterRadius, clear = c.scatterClear;
-  if (R <= clear) return;
+  if (R <= 0) return;
 
-  const far = (x, y) => starts.every(([sx, sy]) => Math.max(Math.abs(x - sx), Math.abs(y - sy)) >= clear);
-  const near = (x, y) => starts.some(([sx, sy]) => Math.max(Math.abs(x - sx), Math.abs(y - sy)) <= R);
+  const far = (x, y) => Math.max(Math.abs(x), Math.abs(y)) >= clear;
+  const near = (x, y) => Math.max(Math.abs(x), Math.abs(y)) <= R;
 
   const spot = () => {
     for (let tries = 0; tries < 160; tries++) {
-      const [ox, oy] = starts[rng.int(starts.length)];
-      const x = ox + rng.range(-R, R);
-      const y = oy + rng.range(-R, R);
+      const x = rng.range(-R, R);
+      const y = rng.range(-R, R);
       if (s.board[K(x, y)]) continue;
       if (!far(x, y) || !near(x, y)) continue;
       return [x, y];
@@ -272,7 +284,9 @@ function scatterNeutrals(s, rng, log) {
     return null;
   };
 
-  const n = starts.length;
+  // Scaled by how many are playing, as before, so a four-player board is
+  // richer than a duel rather than the same ground split four ways.
+  const n = Math.max(1, s.players.length);
   let caches = 0, stacks = 0;
   for (let i = 0; i < c.scatterCaches * n && c.cacheMax > 0; i++) {
     const p = spot(); if (!p) break;
@@ -285,7 +299,10 @@ function scatterNeutrals(s, rng, log) {
     stacks++;
   }
   if (caches || stacks) {
-    log.push(`The ground holds ${stacks} neutral stack${stacks === 1 ? '' : 's'} and ${caches} loose armory pile${caches === 1 ? '' : 's'}.`);
+    // createInitialState has nowhere to write a log entry, so the note
+    // is held on the state and pushed by the first action taken.
+    s.openingNote = `The ground holds ${stacks} neutral stack${stacks === 1 ? '' : 's'} `
+      + `and ${caches} loose armory pile${caches === 1 ? '' : 's'} — choose your ground with them in mind.`;
   }
 }
 
@@ -698,7 +715,7 @@ const territory = {
   rulesText,
 
   createInitialState(config, rng, players = []) {
-    return {
+    const s = {
       config: structuredClone(config),
       phase: 'place',
       board: {},
@@ -711,7 +728,11 @@ const territory = {
       territory: 0,
       turnNo: 1,
       winner: null,
+      openingNote: null,
     };
+    // The ground is laid before anyone chooses where to stand.
+    scatterNeutrals(s, rng);
+    return s;
   },
 
   legalActions(state, actorId, scope = null) {
@@ -724,7 +745,9 @@ const territory = {
       // The infinite board makes "every legal square" meaningless, so
       // offer a workable window around the existing starts instead. The
       // UI lets a player click anywhere and checks with isLegal().
-      const R = Math.max(cfg(s).campSpacing * 2, 6);
+      // Wide enough to take in the scattered ground, so a player can
+      // see the resources they are choosing between.
+      const R = Math.max(cfg(s).campSpacing * 2, cfg(s).scatterRadius, 6);
       const origins = s.starts.length ? s.starts : [[0, 0]];
       const seen = new Set();
       for (const [ox, oy] of origins) {
@@ -832,6 +855,13 @@ const territory = {
     const s = state, a = action, log = [];
     const c = cfg(s);
 
+    // The opening scatter happens before any action, so its note waits
+    // here for the first one to carry it into the record.
+    if (s.openingNote) {
+      log.push(s.openingNote);
+      s.openingNote = null;
+    }
+
     switch (a.type) {
       case 'place': {
         s.board[K(a.x, a.y)] = { o: s.placeIdx, u: c.startCamp, a: 0 };
@@ -841,7 +871,6 @@ const territory = {
         if (s.placeIdx < s.players.length) {
           s.cur = s.placeIdx;
         } else {
-          scatterNeutrals(s, rng, log);
           s.cur = 0;
           startProduction(s, log);
         }

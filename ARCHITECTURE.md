@@ -338,6 +338,29 @@ learns a game's vocabulary. (This came out of a guard test catching
   renderer or the UI learns a game's vocabulary; one of them caught
   `main.js` reading `player.armory`, which is why seats now carry
   neutral `colors.primary` / `colors.accent`. Suite at 174 tests.
+- **2026-09-02 · rulesets/territory.js, main.js, styles.css** — The
+  opening ground is now scattered in `createInitialState`, before anyone
+  places a camp, so players can see the neutral stacks and loose armory
+  and choose a start with them in mind. Three consequences:
+
+  - The scatter can no longer anchor on the camps, because there aren't
+    any yet. It spreads around the origin, with `scatterClear` keeping
+    the middle open, and scales by player count as before.
+  - `canPlace` measured spacing against *every* occupied square, which
+    with neutrals present would have fenced players away from exactly
+    the ground they are competing for. Spacing is now measured against
+    `s.starts` only — camps keep their distance from each other, but a
+    camp may sit beside a neutral. A start still cannot be pitched on
+    top of one.
+  - `createInitialState` has nowhere to write a log entry, so the
+    scatter note is held on the state as `openingNote` and pushed by the
+    first action taken. Tested that it appears exactly once.
+
+  The placement window widened to take in `scatterRadius`, so the whole
+  scattered field is visible while choosing. Neutral chips were
+  desaturated *and* dimmed, which made them nearly invisible now that
+  they are the first thing a player reads; they keep the desaturation
+  and lose the dimming. Picker heading is one colour. Suite at 235.
 - **2026-09-02 · board.js, styles.css, main.js, rulesets/index.js** —
   Visual and editor work.
 

@@ -431,3 +431,83 @@ test('no actions are offered once the game is over', () => {
   assert.deepEqual(eng.legalActions(0), []);
   assert.throws(() => eng.applyAction({ type: 'endTurn' }), /already over/);
 });
+
+/* ---------- the ground is laid before anyone stands on it ---------- */
+
+test('neutral stacks are on the board before the first camp is placed', () => {
+  const eng = new Engine(territory, {
+    players: [{ name: 'A' }, { name: 'B' }],
+    config: { scatterStacks: 4, scatterCaches: 2 },
+    seed: 12,
+  });
+  assert.equal(eng.state.phase, 'place');
+  const cells = territory.occupiedCells(eng.state);
+  assert.ok(cells.length > 0,
+    'players should be able to see the resources before choosing a start');
+  for (const { x, y } of cells) {
+    assert.equal(territory.describeCell(eng.state, x, y).ownerId, null,
+      'everything on an unplaced board belongs to nobody');
+  }
+});
+
+test('a camp may be pitched right beside a neutral stack', () => {
+  // Spacing is about keeping rulers apart. Measuring it against every
+  // occupied square would fence players away from exactly the ground
+  // they are meant to be competing for.
+  const eng = new Engine(territory, {
+    players: [{ name: 'A' }, { name: 'B' }],
+    config: { scatterStacks: 4 },
+    seed: 12,
+  });
+  const n = territory.occupiedCells(eng.state)[0];
+  const beside = { type: 'place', x: n.x + 1, y: n.y };
+  assert.ok(eng.isLegal(beside, 0), 'a neutral should not block a start next to it');
+  assert.doesNotThrow(() => eng.applyAction(beside, 0));
+});
+
+test('camps must still stand clear of one another', () => {
+  const eng = new Engine(territory, {
+    players: [{ name: 'A' }, { name: 'B' }],
+    config: { scatterStacks: 2, campSpacing: 4 },
+    seed: 3,
+  });
+  eng.applyAction({ type: 'place', x: 0, y: 0 }, 0);
+  for (const a of eng.legalActions(1)) {
+    const gap = Math.max(Math.abs(a.x), Math.abs(a.y));
+    assert.ok(gap >= 4, `${a.x},${a.y} is only ${gap} from the first camp`);
+  }
+});
+
+test('a start cannot be pitched on top of a neutral stack', () => {
+  const eng = new Engine(territory, {
+    players: [{ name: 'A' }, { name: 'B' }],
+    config: { scatterStacks: 4 },
+    seed: 12,
+  });
+  const n = territory.occupiedCells(eng.state)[0];
+  assert.ok(!eng.isLegal({ type: 'place', x: n.x, y: n.y }, 0),
+    'the square is taken, even though nobody owns it');
+});
+
+test('the opening scatter is reported once, in the record', () => {
+  const eng = new Engine(territory, {
+    players: [{ name: 'A' }, { name: 'B' }],
+    config: { scatterStacks: 3 },
+    seed: 7,
+  });
+  eng.applyAction(eng.legalActions(0)[0], 0);
+  const notes = eng.log.filter(e => /ground holds/.test(e.text));
+  assert.equal(notes.length, 1, 'the scatter should be announced exactly once');
+  eng.applyAction(eng.legalActions(1)[0], 1);
+  assert.equal(eng.log.filter(e => /ground holds/.test(e.text)).length, 1,
+    'and not repeated on every action');
+});
+
+test('the same seed lays the same ground', () => {
+  const make = () => new Engine(territory, {
+    players: [{ name: 'A' }, { name: 'B' }],
+    config: { scatterStacks: 4, scatterCaches: 2 },
+    seed: 99,
+  }).fingerprint();
+  assert.equal(make(), make(), 'scattering at creation must stay deterministic');
+});
