@@ -338,6 +338,82 @@ learns a game's vocabulary. (This came out of a guard test catching
   renderer or the UI learns a game's vocabulary; one of them caught
   `main.js` reading `player.armory`, which is why seats now carry
   neutral `colors.primary` / `colors.accent`. Suite at 174 tests.
+- **2026-09-01 · ai-api.js, engine.js, rulesets, main.js** — The AI
+  layer. `src/ai-api.js` holds the contract, a generic evaluator, a
+  greedy opponent, and an AI registry mirroring the ruleset one. Two
+  contract additions were needed: `Engine.preview()` applies an action
+  to a copy without touching history, log, or listeners; and
+  `occupiedCells()` joins the ruleset contract, because `describeCell`
+  only answers about coordinates you already hold and an infinite board
+  gives no way to guess which ones matter.
+
+  Every AI move goes through `applyAction`, so a game against a bot is
+  describable by the same five things as any other and replays exactly;
+  there is a test per ruleset proving it.
+
+  Measured against random play: checkers 20-0, chess 20-0, Territory 6-0
+  on ground. Four findings worth keeping:
+
+  1. The first version *lost every checkers game to random*. The denial
+     term counted opponent mobility, and with compulsory captures the
+     cheapest way to shorten the opponent's reply list is to hang a
+     piece. Mobility is now excluded from denial.
+  2. Still 17-23 after that fix, because it could not see a piece taken
+     straight back. A one-ply reply check on a shortlist took it to
+     20-0. It still cannot see a two-move trap; that is the honest
+     ceiling of a greedy player.
+  3. Territory hung outright. Forge and burn are exactly reversible at
+     zero cost, so the AI oscillated forever. Cycle detection needed
+     `positionHash()`, which strips `rngState` and `actionCount` —
+     `hashState` includes them, so identical positions never matched and
+     the check silently did nothing. **Design note for Bob: forge and
+     burn currently compose to a free no-op. Harmless between people,
+     but any automated player finds it.**
+  4. Territory reached 26 seconds a turn. Profiling (not guessing —
+     the first guess was wrong) showed `legalActions` at ~0.4ms
+     dominating, re-enumerated per candidate. A work budget
+     (`MAX_CANDIDATES`, `REPLY_CEILING`, `SAFETY_SHORTLIST`) brought the
+     slowest turn to 1.7s.
+
+  Territory also gained its own `evaluate()`. The generic scorer counts
+  every counter alike, so an armory chip weighed the same as a unit
+  chip, and forging turned unvalued moves into valued armory — the bot
+  spent whole turns forging. That is what the contract's escape hatch is
+  for: a game whose resources aren't interchangeable has to say so.
+
+  UI: each seat in the picker is a person or a bot (seat two defaults to
+  a bot, so a lone visitor has an opponent), the bot's turn is stepped
+  one action at a time with a pause between so a long Territory turn
+  renders as decisions rather than a freeze, the board locks while it
+  plays but still allows inspection, and its weights are tunable in
+  settings. A bot that throws hands its seat back rather than stranding
+  the game. Suite at 224 tests.
+- **2026-09-01 · main.js, styles.css** — Opening placement now uses its
+  own highlight (`hl-place`) instead of borrowing the move-target one.
+  A placement field can cover every square on screen, and the dashed
+  border that reads well on a handful of targets became noise at that
+  scale; the quiet wash lets the excluded ground around a rival's camp
+  show through as a hole instead.
+- **2026-09-01 · board.js, main.js, styles.css** — Four fixes, none of
+  which the suite had covered; all four now have tests.
+  Vertical panning was inverted: `panBy` subtracted on both axes, but
+  board y grows upward while screen y grows downward, so dragging down
+  sent the ground up.
+  Pooled cells weren't fully wiped when they emptied, so a recycled
+  element kept the previous occupant's `data-label` (captions on bare
+  ground, and stale ones bleeding across a game switch). The same gap
+  left `slot.dataset.sig` behind, which would have made an identical
+  piece returning to a vacated square never render at all — latent, and
+  now covered.
+  `button.primary` had brass text painted onto its brass fill by the
+  generic hover rule, erasing the label; filled buttons now darken the
+  fill and keep ink text.
+  Territory's opening placement only highlighted for the first player.
+  `canPlace` had always enforced camp spacing, but `commit()` parked the
+  selection on the square just placed, and placement highlights only
+  render when nothing is selected. A placement has no origin, so it is
+  no longer treated as the start of a chain. The second player now sees
+  the same field with a hole in it where the spacing rule forbids them.
 - **2026-09-01 · index.html, main.js, styles.css** — The wordmark now
   reads "Checkered <Game>", taking the second half from the registry
   entry rather than from anything the engine knows. Clicking it (or

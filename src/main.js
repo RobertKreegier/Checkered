@@ -17,6 +17,7 @@ import { BoardView } from './board.js';
 import { allRulesets, getRuleset, registerRuleset } from '../rulesets/index.js';
 import { seedFromString } from './rng.js';
 import { applyTheme, loadTheme, saveTheme, resetTheme, THEME_KEY } from './theme.js';
+import { allAis, getAi, takeTurn, positionHash, seededRandom, DEFAULT_WEIGHTS } from './ai-api.js';
 
 const $ = sel => document.querySelector(sel);
 
@@ -37,6 +38,13 @@ const UI = {
   selected: null,
   pendingTargets: null,   // actions competing for the same square
   lastMove: null,
+
+  /** Per seat: null for a person, or an AI id. */
+  seats: [],
+  aiWeights: { ...DEFAULT_WEIGHTS },
+  thinking: false,        // an AI is mid-turn; the board is not yours
+  aiSeen: null,           // positions this AI turn has already occupied
+  aiTimer: null,
 };
 
 /* ============================================================
@@ -44,18 +52,28 @@ const UI = {
    ============================================================ */
 
 function openPicker() {
+  clearAiTimer();
   setWordmark('');
   const games = allRulesets();
   let chosen = games[0];
   let count = Math.max(2, chosen.minPlayers);
+  // Second seat defaults to a bot, so a lone visitor has an opponent
+  // without having to work out how to arrange one.
+  const seats = [null, allAis()[0]?.id || null, null, null];
 
   const paint = () => {
-    const seats = Array.from({ length: count }, (_, i) => {
+    // `seatRows` is the markup; `seats` above is who plays each one.
+    const seatRows = Array.from({ length: count }, (_, i) => {
       const d = chosen.defaultPlayers[i]
         || { name: 'Player ' + (i + 1), colors: { primary: '#888888', accent: '#cccccc' } };
+      const bots = allAis();
       return `<div class="prow">
         <span class="idx">${i + 1}</span>
         <input type="text" id="nm${i}" value="${d.name}" maxlength="14">
+        <select id="ct${i}" title="who plays this seat">
+          <option value="">Person</option>
+          ${bots.map(b => `<option value="${b.id}" ${seats[i] === b.id ? 'selected' : ''}>${b.name} bot</option>`).join('')}
+        </select>
         <input type="color" id="uc${i}" value="${d.colors?.primary || '#888888'}" title="main color">
         <input type="color" id="ac${i}" value="${d.colors?.accent || '#cccccc'}" title="accent color">
       </div>`;
@@ -79,7 +97,7 @@ function openPicker() {
       <div class="btnrow" style="margin-bottom:14px">
         ${range.map(n => `<button class="${n === count ? 'on' : ''}" data-n="${n}">${n === 1 ? 'Solo' : n + ' players'}</button>`).join('')}
       </div>
-      ${seats}
+      ${seatRows}
       <div class="warn" id="warn"></div>
       <div class="btnrow" style="margin-top:12px">
         <button class="primary" id="go">Set the board</button>
@@ -96,6 +114,10 @@ function openPicker() {
     modal.el.querySelectorAll('[data-n]').forEach(b => {
       b.onclick = () => { count = +b.dataset.n; paint(); };
     });
+    for (let i = 0; i < count; i++) {
+      const sel = $('#ct' + i);
+      if (sel) sel.onchange = () => { seats[i] = sel.value || null; };
+    }
     $('#rules').onclick = () => showRules(chosen.ruleset, paint);
     $('#go').onclick = () => {
       const players = [];
@@ -104,6 +126,7 @@ function openPicker() {
           name: ($('#nm' + i).value || 'Player ' + (i + 1)).trim(),
           colors: { primary: $('#uc' + i).value, accent: $('#ac' + i).value },
         });
+        seats[i] = $('#ct' + i)?.value || null;
       }
       const colors = players.flatMap(p => [
         p.colors.primary.toLowerCase(), p.colors.accent.toLowerCase()]);
@@ -111,14 +134,15 @@ function openPicker() {
         $('#warn').textContent = 'Every color must be unique, so no two pieces look alike.';
         return;
       }
-      startGame(chosen, players);
+      startGame(chosen, players, seats.slice(0, count));
     };
   };
 
   paint();
 }
 
-function startGame(entry, players) {
+function startGame(entry, players, seats = []) {
+  clearAiTimer();
   UI.entry = entry;
   UI.engine = new Engine(entry.ruleset, {
     players,
@@ -127,12 +151,89 @@ function startGame(entry, players) {
   UI.selected = null;
   UI.pendingTargets = null;
   UI.lastMove = null;
+  UI.seats = players.map((_, i) => seats[i] || null);
+  UI.thinking = false;
+  UI.aiSeen = null;
+  // Seeded, so a game against a bot replays like any other.
+  UI.aiRandom = seededRandom(UI.engine.seed ^ 0x5f3759df);
 
   UI.engine.onChange(() => { refresh(); });
   UI.board.attach(UI.engine);
   setWordmark(entry.name);
   closeModal();
   refresh();
+  maybeRunAi();
+}
+
+/* ============================================================
+   THE BOT
+   ============================================================ */
+
+const seatIsAi = i => !!UI.seats[i];
+
+function clearAiTimer() {
+  if (UI.aiTimer) clearTimeout(UI.aiTimer);
+  UI.aiTimer = null;
+}
+
+/**
+ * Let a bot take its turn, one action at a time.
+ *
+ * Deliberately not a single synchronous playTurn(): a Territory turn can
+ * be a hundred actions and take over a second, which would freeze the
+ * page and show the player nothing but a stalled board. Stepping through
+ * with a timeout between actions lets each move render as it happens, so
+ * the turn reads as a sequence of decisions rather than a hang.
+ */
+function maybeRunAi() {
+  clearAiTimer();
+  const eng = UI.engine;
+  if (!eng || eng.isOver()) { UI.thinking = false; return; }
+
+  const actor = eng.state.cur;
+  if (!seatIsAi(actor)) {
+    if (UI.thinking) { UI.thinking = false; refresh(); }
+    UI.aiSeen = null;
+    return;
+  }
+
+  const entry = getAi(UI.seats[actor]);
+  if (!entry) { UI.thinking = false; return; }
+
+  if (!UI.thinking) {
+    UI.thinking = true;
+    UI.selected = null;
+    UI.pendingTargets = null;
+    refresh();
+  }
+
+  if (!UI.aiSeen) UI.aiSeen = new Set([positionHash(eng.state)]);
+
+  UI.aiTimer = setTimeout(() => {
+    const ai = entry.create(UI.aiWeights);
+    let action = null;
+    try {
+      action = takeTurn(eng, ai, actor, UI.aiRandom, UI.aiSeen);
+    } catch (err) {
+      // A bot that misbehaves shouldn't strand the game. Say so and
+      // hand control back rather than leaving the board frozen.
+      UI.thinking = false;
+      UI.seats[actor] = null;
+      flash(`${entry.name} failed: ${err.message}. That seat is now yours.`);
+      refresh();
+      return;
+    }
+
+    if (!action) { UI.thinking = false; UI.aiSeen = null; refresh(); return; }
+
+    // Going in circles: end the turn rather than loop (see ai-api.js).
+    const here = positionHash(eng.state);
+    if (UI.aiSeen.has(here)) { UI.thinking = false; UI.aiSeen = null; refresh(); return; }
+    UI.aiSeen.add(here);
+
+    if (eng.state.cur !== actor) UI.aiSeen = null;
+    maybeRunAi();
+  }, 180);
 }
 
 /* ============================================================
@@ -164,6 +265,10 @@ const same = (a, b) => a && b && a.x === b.x && a.y === b.y;
 function onCellClick(cell, opts) {
   const eng = UI.engine;
   if (!eng || eng.isOver()) return;
+  // The board belongs to the bot until its turn is over. Inspecting is
+  // still fine — reading the position while it plays is harmless.
+  if (UI.thinking && !opts.inspect) return;
+  if (seatIsAi(eng.state.cur) && !opts.inspect) return;
 
   const actions = currentActions();
 
@@ -214,6 +319,7 @@ function commit(entry) {
     flash(err.message);
   }
   refresh();
+  maybeRunAi();
 }
 
 /* ============================================================
@@ -245,6 +351,7 @@ function refresh() {
     }
   }
 
+  if (UI.board.mount) UI.board.mount.classList.toggle('waiting', !!UI.thinking);
   UI.board.setHighlights(marks);
   UI.board.setSelected(UI.selected);
   UI.board.draw();
@@ -280,6 +387,12 @@ function renderPanel(actions) {
       </div>
     </div>`;
     if (actor.status) h += `<div class="kv"><span>${actor.status}</span></div>`;
+    if (seatIsAi(st.cur)) {
+      const bot = getAi(UI.seats[st.cur]);
+      h += `<div class="card bot">
+        <div class="rowlab">${bot ? bot.name : 'Bot'} is playing${UI.thinking ? '\u2026' : ''}</div>
+        <p class="hint">${bot ? bot.description : ''}</p></div>`;
+    }
   }
 
   // Anything the ruleset chose to surface.
@@ -319,7 +432,7 @@ function renderPanel(actions) {
     const nm = a?.name || p.name || 'Player ' + i;
     return `<div class="ros ${a && a.alive === false ? 'dead' : ''}">
       <span class="sw"><i style="background:${p.colors?.primary || '#888'}"></i><i style="background:${p.colors?.accent || '#ccc'}"></i></span>
-      <span class="nm">${nm}${i === st.cur && !over ? ' ←' : ''}</span>
+      <span class="nm">${nm}${seatIsAi(i) ? ' <span class="botmark">bot</span>' : ''}${i === st.cur && !over ? ' ←' : ''}</span>
       <span class="st">${a?.status || ''}</span>
     </div>`;
   }).join('');
@@ -430,6 +543,23 @@ function showRules(ruleset, back) {
   $('#close').onclick = () => (back ? back() : closeModal());
 }
 
+/** Tuning knobs for the bot, shown only when one is actually playing. */
+function botKnobsHtml() {
+  if (!UI.seats.some(Boolean)) return '';
+  const spec = getAi(UI.seats.find(Boolean))?.weightSpec || [];
+  if (!spec.length) return '';
+  return `<h3>Bot</h3>
+    ${spec.map(([k, label]) => `
+      <div class="srow">
+        <label for="w_${k}">${label}</label>
+        <input type="number" id="w_${k}" step="0.1"
+               value="${UI.aiWeights[k] ?? DEFAULT_WEIGHTS[k]}">
+      </div>`).join('')}
+    <p class="hint">Changing these changes how the bot plays its next move.
+    It looks one move ahead and checks what can be taken straight back,
+    so it will still walk into anything that takes two moves to punish.</p>`;
+}
+
 function showSettings() {
   const rs = UI.engine.ruleset;
   const cfg = UI.engine.config;
@@ -451,6 +581,7 @@ function showSettings() {
     ${groups}
     <p class="hint">In an online match these lock when the game starts, so both
     sides stay on the same rules.</p>
+    ${botKnobsHtml()}
     <div class="btnrow" style="margin-top:18px">
       <button class="primary" id="apply">Apply</button>
       <button id="close">Close</button>
@@ -466,6 +597,10 @@ function showSettings() {
           : type === 'text' ? el.value
             : Math.max(0, Number(el.value) || 0);
       }
+    }
+    for (const [k] of getAi(UI.seats.find(Boolean))?.weightSpec || []) {
+      const el = $('#w_' + k);
+      if (el) UI.aiWeights[k] = Number(el.value);
     }
     // Live state carries its own copy for rulesets that snapshot config.
     if (UI.engine.state.config) Object.assign(UI.engine.state.config, UI.engine.config);
@@ -608,4 +743,4 @@ export function boot() {
 
 if (typeof document !== 'undefined' && document.getElementById('modal')) boot();
 
-export { UI, onCellClick, currentActions, setWordmark, confirmNew, openPicker, refresh };
+export { UI, onCellClick, currentActions, setWordmark, confirmNew, openPicker, refresh, maybeRunAi, startGame };

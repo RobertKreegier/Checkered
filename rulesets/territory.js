@@ -923,6 +923,55 @@ const territory = {
     };
   },
 
+  /**
+   * Territory's own worth-of-a-position, overriding the generic one.
+   *
+   * The generic evaluator counts every counter alike, which here means
+   * an armory chip weighs the same as a unit chip. That is wrong in a
+   * specific and exploitable way: forging turns moves — which the
+   * generic scorer doesn't value at all — into armory, which it does.
+   * An AI on the generic scorer spends its entire turn forging and
+   * never moves. This is the escape hatch the contract offers for
+   * exactly that: a game whose resources aren't interchangeable has to
+   * say so itself.
+   */
+  evaluate(state, actorId) {
+    const c = cfg(state);
+    const me = state.players[actorId];
+    if (me && me.alive === false) return -1000000;
+
+    let score = 0;
+    for (const [k, st] of Object.entries(state.board)) {
+      if (st.o === null) continue;
+      const sign = st.o === actorId ? 1 : -1;
+      // Ground is the move clock, so a held square is worth more than
+      // the chips standing on it.
+      score += sign * 6;
+      score += sign * 4 * st.u;
+      // Armory is real but convertible at a loss, so it is worth less
+      // than the unit chip it could become.
+      score += sign * 1.5 * st.a;
+      // A camp is survival: without one you are out at end of turn.
+      if (st.u >= c.campSize) score += sign * 25;
+      if (st.u >= c.townSize) score += sign * 15;
+    }
+
+    // Unspent moves are worth something, but less than the ground that
+    // generated them — otherwise sitting still looks like a plan.
+    if (state.cur === actorId) score += 0.5 * (state.moves || 0);
+    return score;
+  },
+
+  /** Every square holding something — see occupiedCells in the contract. */
+  occupiedCells(state) {
+    const out = [];
+    for (const k of Object.keys(state.board)) {
+      const [x, y] = k.split(',').map(Number);
+      out.push({ x, y });
+    }
+    return out;
+  },
+
   describeCell(state, x, y) {
     const st = at(state, x, y);
     if (!st) return null;

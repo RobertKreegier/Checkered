@@ -241,6 +241,19 @@ button:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
 .ros .nm { flex: 1; }
 .ros .st { font-family: var(--mono); font-size: 10px; color: var(--mute); }
 .ros.dead { opacity: .35; text-decoration: line-through; }
+.botmark {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--brass-dim);
+  border: 1px solid var(--line); padding: 1px 4px; border-radius: 2px;
+}
+.card.bot { border-color: var(--brass-dim); }
+/* While a bot is thinking the board is not yours to touch. */
+.board-view.waiting .board-root { cursor: progress; }
+
+select {
+  background: var(--felt-2); border: 1px solid var(--line); color: var(--chalk);
+  font-family: var(--mono); font-size: 11px; padding: 8px 6px; border-radius: 2px;
+}
 
 #log { font-family: var(--mono); font-size: 11px; line-height: 1.6; color: var(--mute); }
 #log div { padding: 2px 0; border-bottom: 1px solid rgba(255, 255, 255, .04); }
@@ -288,7 +301,7 @@ input[type=text], input[type=number], textarea {
 }
 textarea { width: 100%; min-height: 260px; font-family: var(--mono); font-size: 12px; line-height: 1.5; }
 input[type=color] { width: 52px; height: 36px; padding: 2px; background: var(--felt-2); border: 1px solid var(--line); border-radius: 2px; cursor: pointer; }
-.prow { display: grid; grid-template-columns: 24px 1fr 52px 52px; gap: 10px; align-items: center; margin-bottom: 8px; }
+.prow { display: grid; grid-template-columns: 24px 1fr 110px 52px 52px; gap: 10px; align-items: center; margin-bottom: 8px; }
 .prow .idx { font-family: var(--mono); font-size: 11px; color: var(--brass-dim); }
 .warn { color: var(--danger); font-size: 12px; font-family: var(--mono); min-height: 18px; margin: 6px 0; }
 .ok { color: var(--brass); }

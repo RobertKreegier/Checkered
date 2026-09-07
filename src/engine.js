@@ -138,6 +138,30 @@ export class Engine {
     return { hash: this.fingerprint(), entries };
   }
 
+  /**
+   * Apply an action to a copy and hand back the resulting state, leaving
+   * this engine untouched — no history, no log, no change notification.
+   *
+   * This is what lets an AI look before it leaps without the alternative
+   * of "apply then undo", which would churn history and fire listeners
+   * for moves nobody made. Returns null if the ruleset refuses or throws,
+   * so a caller can treat "can't be previewed" as "not worth trying".
+   */
+  preview(action, actorId = this.state.cur) {
+    if (this.isOver()) return null;
+    if (!this.isLegal(action, actorId)) return null;
+    const draft = structuredClone(this.state);
+    const rng = new Rng(draft.rngState ?? this.seed);
+    try {
+      this.ruleset.applyAction(draft, action, rng);
+    } catch {
+      return null;
+    }
+    draft.rngState = rng.state;
+    draft.actionCount = (draft.actionCount || 0) + 1;
+    return draft;
+  }
+
   /* ---------- undo ---------- */
 
   canUndo() {
