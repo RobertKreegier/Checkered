@@ -15,6 +15,7 @@
 import { Engine } from './engine.js';
 import { BoardView } from './board.js';
 import { allRulesets, getRuleset, registerRuleset } from '../rulesets/index.js';
+import { validateRuleset } from './ruleset-api.js';
 import { seedFromString } from './rng.js';
 import { applyTheme, loadTheme, saveTheme, resetTheme, THEME_KEY } from './theme.js';
 import { allAis, getAi, takeTurn, positionHash, seededRandom, DEFAULT_WEIGHTS } from './ai-api.js';
@@ -610,72 +611,221 @@ function showSettings() {
   $('#close').onclick = closeModal;
 }
 
-function showCode() {
+/**
+ * The ruleset's own source, editable while a game is running.
+ *
+ * Shows the real file rather than an empty box: the point of the feature
+ * is that a player can read how the game works, change a rule, and see
+ * what happens. Fetched at runtime, which is why the page has to be
+ * served rather than opened from disk.
+ */
+async function showCode() {
   const rs = UI.engine.ruleset;
+  const entry = UI.entry;
+
   modal(`<div class="rules">
     <h2>Ruleset <span>code</span></h2>
     <p class="sub">${rs.name} ${rs.version}</p>
-    <p class="hint">This is the game's own source. Edit it, and the edited
-    version is registered as a separate ruleset you can start a new game with.
-    Running a ruleset someone else wrote runs their code in your browser — the
-    same trust you'd give a userscript.</p>
-    <textarea id="src" spellcheck="false">${
-    (rs.source || '// This ruleset was loaded as a module.\n// Paste a full ruleset module here to register your own variant.\n')
-      .replace(/</g, '&lt;')}</textarea>
+    <p class="hint">This is the game's own source. Change it and either
+    apply it to the game in progress, or register it as a separate ruleset
+    to start fresh with. Running a ruleset someone else wrote runs their
+    code in your browser — the same trust you would give a userscript.</p>
+    <textarea id="src" spellcheck="false">Loading the source\u2026</textarea>
     <div class="warn" id="cwarn"></div>
     <div class="btnrow" style="margin-top:12px">
-      <button class="primary" id="load">Register this ruleset</button>
+      <button class="primary" id="live">Apply to this game</button>
+      <button id="load">Register as a new ruleset</button>
+      <button id="revert">Revert</button>
       <button id="close">Close</button>
     </div>
   </div>`);
 
-  $('#load').onclick = async () => {
-    const text = $('#src').value;
-    const warn = $('#cwarn');
+  const box = $('#src');
+  const warn = $('#cwarn');
+  const original = await loadSource(entry);
+  box.value = original;
+
+  const compile = async text => {
+    // An error boundary matters here: a typo in a hand-edited ruleset
+    // must surface as a message, not a blank page.
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/javascript' }));
     try {
-      // An error boundary matters here: a typo in a hand-edited ruleset
-      // must show up as a message, not a blank page.
-      const url = URL.createObjectURL(new Blob([text], { type: 'text/javascript' }));
       const mod = await import(/* @vite-ignore */ url);
+      if (!mod.default) throw new Error('The module has no default export.');
+      return mod.default;
+    } finally {
       URL.revokeObjectURL(url);
-      const candidate = mod.default;
-      if (!candidate) throw new Error('The module has no default export.');
-      const entry = registerRuleset(candidate, {
-        blurb: 'Your own variant.',
-        minPlayers: UI.entry.minPlayers,
-        maxPlayers: UI.entry.maxPlayers,
-        defaultPlayers: UI.entry.defaultPlayers,
-        custom: true,
-      });
-      warn.className = 'warn ok';
-      warn.textContent = `Registered "${entry.name}". Start a new game to play it.`;
-    } catch (err) {
-      warn.className = 'warn';
-      warn.textContent = err.message;
     }
   };
+
+  const say = (msg, good) => {
+    warn.className = good ? 'warn ok' : 'warn';
+    warn.textContent = msg;
+  };
+
+  $('#live').onclick = async () => {
+    try {
+      const candidate = await compile(box.value);
+      const problems = validateRuleset(candidate);
+      if (problems.length) throw new Error(problems.join('; '));
+      // Swap the rules under the running game. Legal in single player by
+      // design — it is the whole point of live editing. In an online
+      // match the rules are pinned at the start, so this is refused.
+      if (UI.online) throw new Error('Rules are locked for the duration of an online match.');
+      UI.engine.ruleset = candidate;
+      UI.selected = null;
+      UI.pendingTargets = null;
+      say('Applied. The game is now running your version.', true);
+      refresh();
+    } catch (err) {
+      say(err.message);
+    }
+  };
+
+  $('#load').onclick = async () => {
+    try {
+      const candidate = await compile(box.value);
+      const added = registerRuleset(candidate, {
+        blurb: 'Your own variant.',
+        minPlayers: entry.minPlayers,
+        maxPlayers: entry.maxPlayers,
+        defaultPlayers: entry.defaultPlayers,
+        source: box.value,
+        custom: true,
+      });
+      say(`Registered "${added.name}". Start a new game to play it.`, true);
+    } catch (err) {
+      say(err.message);
+    }
+  };
+
+  $('#revert').onclick = () => { box.value = original; say('Back to the original.', true); };
   $('#close').onclick = closeModal;
 }
 
-function showTheme() {
+/** Fetch a ruleset's source, falling back to whatever text it carries. */
+async function loadSource(entry) {
+  if (entry?.source) return entry.source;
+  if (!entry?.sourceUrl) {
+    return '// This ruleset was registered from memory and has no file.\n'
+      + '// Paste a complete ruleset module here to replace it.\n';
+  }
+  try {
+    const res = await fetch(entry.sourceUrl);
+    if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
+    return await res.text();
+  } catch (err) {
+    return `// Could not load ${entry.sourceUrl}\n// ${err.message}\n`
+      + '//\n// Serving the folder over http is required; a page opened\n'
+      + '// straight from disk cannot read its own source files.\n';
+  }
+}
+
+/**
+ * The player's own CSS.
+ *
+ * Opens showing something real rather than an empty box: if you have
+ * written styling before, that; otherwise a starter sheet of the
+ * variables and selectors actually in use, with the current values
+ * filled in. The point is that you can see at a glance what there is to
+ * change without having to go reading the stylesheet first.
+ */
+async function showTheme() {
   const current = loadTheme();
+
   modal(`<div class="rules">
     <h2>Your <span>styling</span></h2>
     <p class="sub">Saved in this browser · never sent to your opponent</p>
-    <p class="hint">The board is ordinary HTML, so any CSS works. Cells are
-    <code>.cell</code>, pieces are <code>.piece</code> plus whatever classes the
-    ruleset gives them, and counters are <code>.tag</code>.</p>
-    <textarea id="css" spellcheck="false" placeholder=":root { --brass: #7EC8E3; }">${current || ''}</textarea>
+    <p class="hint">The board is ordinary HTML, so any CSS works. Squares
+    are <code>.cell</code>, pieces are <code>.piece</code> plus whatever
+    classes the ruleset gives them, stacked chips are <code>.chip</code>,
+    and the counters are <code>.tag</code>.</p>
+    <textarea id="css" spellcheck="false"></textarea>
+    <div class="warn" id="twarn"></div>
     <div class="btnrow" style="margin-top:12px">
       <button class="primary" id="save">Apply and save</button>
+      <button id="full">Load the full default sheet</button>
       <button id="reset">Reset to default</button>
       <button id="close">Close</button>
     </div>
   </div>`);
 
-  $('#save').onclick = () => { saveTheme($('#css').value); closeModal(); };
-  $('#reset').onclick = () => { resetTheme(); $('#css').value = ''; };
+  const box = $('#css');
+  const warn = $('#twarn');
+  box.value = current || starterTheme();
+
+  $('#save').onclick = () => { saveTheme(box.value); closeModal(); };
+
+  $('#full').onclick = async () => {
+    // The whole shipped stylesheet, for someone who wants to change
+    // something the starter sheet doesn't mention. It is long, hence a
+    // button rather than the default.
+    try {
+      const res = await fetch(new URL('./styles.css', import.meta.url).href);
+      if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
+      box.value = '/* The shipped stylesheet. Anything you leave here\n'
+        + '   overrides the default, so trimming this to just the rules\n'
+        + '   you changed is kinder to the next person to read it. */\n\n'
+        + await res.text();
+      warn.className = 'warn ok';
+      warn.textContent = 'Loaded. Edit freely — Reset puts everything back.';
+    } catch (err) {
+      warn.className = 'warn';
+      warn.textContent = `Could not load the stylesheet: ${err.message}`;
+    }
+  };
+
+  $('#reset').onclick = () => {
+    resetTheme();
+    box.value = starterTheme();
+    warn.className = 'warn ok';
+    warn.textContent = 'Back to the shipped look.';
+  };
   $('#close').onclick = closeModal;
+}
+
+/**
+ * A starter sheet showing what is there to change, with the values
+ * currently in force read off the live page — so the numbers shown are
+ *the ones actually in use rather than a guess written into this file.
+ */
+function starterTheme() {
+  const seen = getComputedStyle(document.documentElement);
+  const v = name => (seen.getPropertyValue(name) || '').trim();
+  const vars = [
+    ['--felt', 'the board'],
+    ['--ink', 'page background'],
+    ['--panel', 'the side panel'],
+    ['--line', 'grid lines and borders'],
+    ['--brass', 'highlights and accents'],
+    ['--chalk', 'ordinary text'],
+    ['--mute', 'quiet text'],
+  ];
+
+  return `/* Your own styling. Everything here is the current default —
+   change a value, press Apply, and the board changes.
+   Delete anything you do not want to override. */
+
+:root {
+${vars.map(([name, note]) => `  ${name}: ${v(name) || 'inherit'};`.padEnd(38) + ` /* ${note} */`).join('\n')}
+}
+
+/* Squares. The checker pattern is two rules: */
+.cell.dark  { background: ${v('--square-dark') || 'rgba(255,255,255,.035)'}; }
+.cell.light { background: ${v('--square-light') || 'transparent'}; }
+
+/* Where you may move, and what you have picked up: */
+.cell.hl-target { }
+.cell.selected  { }
+
+/* Pieces. Rulesets add their own classes — .stack, .king, .man,
+   .neutral — so you can style one game without touching another: */
+.piece { }
+
+/* Chips in a Territory stack, and the little counters on a square: */
+.chip { }
+.tag  { }
+`;
 }
 
 function confirmNew() {

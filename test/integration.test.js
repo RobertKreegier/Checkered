@@ -235,3 +235,123 @@ test('the renderer holds no game-specific knowledge', async () => {
       `board.js mentions "${word}" in code — the layers have leaked`);
   }
 });
+
+test('dragging moves the board with the cursor, both axes', async () => {
+  const BoardView = await loadBoard();
+  const { mount } = withDom();
+  const view = new BoardView(mount);
+  view.attach(gameFor('territory'));
+  view.panTo(0, 0);
+  paint(view);
+
+  // Where a fixed square sits on screen before and after a drag: it
+  // should travel the same direction and distance as the cursor.
+  const before = view.cellToPoint(0, 0);
+  view.panBy(40, 60);          // cursor moves right and down
+  const after = view.cellToPoint(0, 0);
+
+  assert.ok(Math.abs((after.left - before.left) - 40) < 0.001,
+    'the board should follow the cursor horizontally');
+  assert.ok(Math.abs((after.top - before.top) - 60) < 0.001,
+    'and vertically \u2014 dragging down must not send the board up');
+});
+
+test('a recycled cell keeps nothing from its last occupant', async () => {
+  const BoardView = await loadBoard();
+  const { mount } = withDom();
+  const eng = gameFor('chess');
+  const view = new BoardView(mount);
+  view.attach(eng);
+  paint(view);
+
+  const cellAt = (x, y) => [...mount.querySelectorAll('.cell')]
+    .find(c => c.dataset.x === String(x) && c.dataset.y === String(y));
+
+  const from = cellAt(4, 1);
+  assert.ok(from.dataset.label, 'the pawn square starts with a caption');
+
+  eng.applyAction({ type: 'move', x: 4, y: 1, tx: 4, ty: 3, double: true });
+  paint(view);
+
+  const emptied = cellAt(4, 1);
+  assert.equal(emptied.dataset.label, undefined,
+    'a vacated square must not keep the caption of what stood there');
+  assert.ok(!emptied.querySelector('.piece'), 'and no piece');
+  assert.equal(emptied.firstChild.dataset.sig, undefined,
+    'a stale signature would stop the next piece from being drawn');
+});
+
+test('a square emptied then reoccupied draws the new piece', async () => {
+  // The failure this guards against is subtle: if `sig` survives being
+  // emptied, an identical piece arriving later is considered already
+  // drawn and never appears.
+  const BoardView = await loadBoard();
+  const { mount } = withDom();
+  const eng = gameFor('chess');
+  const view = new BoardView(mount);
+  view.attach(eng);
+  paint(view);
+
+  const cellAt = (x, y) => [...mount.querySelectorAll('.cell')]
+    .find(c => c.dataset.x === String(x) && c.dataset.y === String(y));
+
+  eng.applyAction({ type: 'move', x: 1, y: 0, tx: 2, ty: 2 });   // knight out
+  paint(view);
+  assert.ok(!cellAt(1, 0).querySelector('.piece'));
+
+  eng.applyAction({ type: 'move', x: 1, y: 6, tx: 1, ty: 5 });
+  eng.applyAction({ type: 'move', x: 2, y: 2, tx: 1, ty: 0 });   // and back
+  paint(view);
+  assert.ok(cellAt(1, 0).querySelector('.piece'),
+    'the returning knight must be drawn again');
+});
+
+test('a counted piece is drawn as a column, one chip per unit', async () => {
+  const BoardView = await loadBoard();
+  const { mount } = withDom();
+  const eng = gameFor('territory');
+  const view = new BoardView(mount);
+  view.attach(eng);
+  paint(view);
+
+  const columned = mount.querySelectorAll('.piece.columned');
+  assert.ok(columned.length > 0, 'a stack should be drawn as a column');
+
+  // Each chip element corresponds to something counted, and the kinds
+  // become classes so a stylesheet can tell them apart.
+  const chips = mount.querySelectorAll('.chip');
+  assert.ok(chips.length > 0, 'no chips were drawn');
+  assert.ok(mount.querySelector('.chip.units'), 'unit chips carry their kind');
+});
+
+test('a tall column is elided rather than growing off the square', async () => {
+  const BoardView = await loadBoard();
+  const { mount } = withDom();
+  const eng = gameFor('territory');
+  const view = new BoardView(mount);
+  view.attach(eng);
+  paint(view);
+
+  // The opening camp is eight chips, above the drawing cap.
+  const camp = [...mount.querySelectorAll('.piece.columned')]
+    .find(p => p.querySelectorAll('.chip').length);
+  assert.ok(camp);
+  assert.ok(camp.querySelectorAll('.chip').length <= 9,
+    'the column should be capped, not drawn one-for-one forever');
+  assert.ok(mount.querySelector('.chip.elided'),
+    'and the break should be marked so the height is not read as exact');
+});
+
+test('chess and checkers still draw a glyph, not a column', async () => {
+  const BoardView = await loadBoard();
+  for (const id of ['chess', 'checkers']) {
+    const { mount } = withDom();
+    const view = new BoardView(mount);
+    view.attach(gameFor(id));
+    paint(view);
+    assert.equal(mount.querySelectorAll('.chip').length, 0,
+      `${id} has nothing to count, so it should not be columned`);
+    assert.ok(mount.querySelector('.piece').textContent.length > 0,
+      `${id} pieces should still show their glyph`);
+  }
+});

@@ -14,6 +14,7 @@
   --panel: #0B110F;
   --line: #1E3230;
   --brass: #C8A24A;
+  --brass-bright: #EFC96B;
   --brass-dim: #7A6430;
   --chalk: #E7EDE9;
   --mute: #7E938C;
@@ -110,6 +111,13 @@ body {
   justify-content: center;
   width: 72%; height: 72%;
 }
+/* A column needs headroom for the caption above it and the counters
+ * below, so it gets a shorter, lower slot than a single glyph does. */
+.cell:has(.piece.columned) .piece-slot {
+  height: 60%;
+  align-items: flex-end;
+  margin-top: 14%;
+}
 
 .piece {
   display: flex;
@@ -130,21 +138,62 @@ body {
 .piece.king { filter: drop-shadow(0 0 5px var(--brass)); }
 .piece:not(.stack) { font-size: 2.4em; }
 
-/* Territory draws a column of chips */
-.piece.stack {
-  border-radius: 50%;
-  background: var(--unit-color, var(--mute));
-  border: 2px solid rgba(0, 0, 0, .45);
-  box-shadow:
-    0 2px 0 rgba(0, 0, 0, .35),
-    inset 0 0 0 3px rgba(255, 255, 255, .10),
-    inset 0 -6px 10px rgba(0, 0, 0, .30);
-  width: 76%; height: 76%;
+/* A counted piece is a physical column of chips, stacked bottom-up, so
+ * height reads at a glance. board.js emits one <i class="chip"> per unit
+ * counted (elided past a cap); everything about how they look is here. */
+.piece.columned {
+  display: flex;
+  flex-direction: column-reverse;   /* first chip drawn sits at the bottom */
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%; height: 100%;
+  background: none; border: 0; box-shadow: none;
 }
-.piece.stack.neutral { background: var(--mute); opacity: .8; border-style: dashed; }
-.piece.stack.loose {
-  background: transparent;
-  border: 2px dashed var(--armory-color, var(--brass));
+
+.chip {
+  --chip-face: var(--unit-color, var(--mute));
+  display: block;
+  width: 58%;
+  height: 12.5%;
+  min-height: 3px;
+  flex: 0 0 auto;
+  margin-top: -4.5%;                /* overlap, so they read as a stack */
+  border-radius: 50% / 34%;
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--chip-face) 82%, white) 0 38%,
+      var(--chip-face) 38% 62%,
+      color-mix(in srgb, var(--chip-face) 62%, black) 62% 100%);
+  box-shadow:
+    0 1px 0 rgba(0, 0, 0, .45),
+    inset 0 0 0 1px rgba(0, 0, 0, .30);
+}
+.chip:first-child { margin-top: 0; }
+
+/* Armory rides on top and is drawn smaller, so the two substances stay
+ * legible without needing to read the numbers. */
+.chip.armory {
+  --chip-face: var(--armory-color, var(--brass));
+  width: 44%;
+  height: 11%;
+}
+
+/* Where the column was cut. The gap says "there are more of these than
+ * are drawn"; the exact figure is on the counter tag below. */
+.chip.elided { margin-top: 12%; }
+.chip.elided::after {
+  content: "";
+  position: relative; display: block;
+  top: -170%; left: 8%;
+  width: 84%; height: 1px;
+  border-top: 1px dotted rgba(231, 237, 233, .38);
+}
+
+/* Nobody's: drawn hollow, so unclaimed ground reads differently. */
+.piece.neutral .chip { opacity: .75; filter: saturate(.35); }
+.piece.loose .chip {
+  background: none;
+  border: 1px dashed var(--armory-color, var(--brass));
   box-shadow: none;
 }
 
@@ -220,13 +269,14 @@ button {
 }
 button:hover:not(:disabled) { border-color: var(--brass); color: var(--brass); }
 /* Filled buttons already sit on brass, so the generic hover above would
- * paint brass text on a brass ground and erase the label. Darken the
- * fill instead and keep the ink text. */
+ * paint brass text on a brass ground and erase the label. Brighten the
+ * fill instead and keep the ink text — darkening read as disabled. */
 button.on:hover:not(:disabled),
 button.primary:hover:not(:disabled) {
-  background: var(--brass-dim);
-  border-color: var(--brass-dim);
+  background: var(--brass-bright);
+  border-color: var(--brass-bright);
   color: var(--ink);
+  box-shadow: 0 0 12px rgba(200, 162, 74, .35);
 }
 button:disabled { opacity: .3; cursor: not-allowed; }
 button.on, button.primary { background: var(--brass); color: var(--ink); border-color: var(--brass); font-weight: 700; }

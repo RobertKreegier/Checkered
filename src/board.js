@@ -17,6 +17,15 @@
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
+/**
+ * The tallest column drawn before it is elided. A square is only so
+ * high, and past about this many the eye stops counting anyway — the
+ * exact figure is on the counter tag.
+ */
+const COLUMN_CAP = 7;
+
+const totalOf = counters => counters.reduce((n, c) => n + (c.value || 0), 0) || 1;
+
 export class BoardView {
   /**
    * @param mount   element to fill
@@ -345,7 +354,10 @@ export class BoardView {
     const cls = ['piece'].concat(view.classes || []).join(' ');
     const glyph = view.glyph || '';
     const stack = view.stackHeight || 1;
-    const signature = `${cls}|${glyph}|${stack}|${view.ownerId}`;
+    const counters = (view.counters || []).filter(c => c && c.value > 0);
+    const signature = `${cls}|${glyph}|${stack}|${view.ownerId}|`
+      + counters.map(c => `${c.kind}:${c.value}`).join(',');
+
     if (slot.dataset.sig !== signature) {
       slot.dataset.sig = signature;
       slot.innerHTML = '';
@@ -354,8 +366,30 @@ export class BoardView {
       if (view.ownerId !== null && view.ownerId !== undefined) {
         piece.dataset.owner = view.ownerId;
       }
-      if (glyph) piece.textContent = glyph;
       if (stack > 1) piece.style.setProperty('--stack', stack);
+
+      // A counted piece is drawn as a physical column, one element per
+      // unit counted, so a tall stack reads as tall at a glance rather
+      // than as a number you have to stop and read. Beyond COLUMN_CAP
+      // the column is elided: some are drawn, a gap marks the break, and
+      // the rest are drawn on top, which keeps a stack of forty from
+      // growing off the square. The exact count is still on the tag.
+      let drawn = 0;
+      for (const c of counters) {
+        const cap = Math.max(1, Math.round(COLUMN_CAP * (c.value / totalOf(counters))));
+        const show = Math.min(c.value, Math.max(1, cap));
+        for (let n = 0; n < show; n++) {
+          const chip = document.createElement('i');
+          chip.className = 'chip ' + (c.kind || 'count');
+          // Mark where the column was cut so the stylesheet can show it.
+          if (c.value > show && n === Math.floor(show / 2)) chip.classList.add('elided');
+          piece.appendChild(chip);
+          drawn++;
+        }
+      }
+      if (drawn) piece.classList.add('columned');
+      else if (glyph) piece.textContent = glyph;
+
       slot.appendChild(piece);
     }
 

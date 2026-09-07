@@ -31,6 +31,10 @@ import { validateRuleset } from '../src/ruleset-api.js';
 const ENTRIES = [
   {
     ruleset: territory,
+    // Where the source lives, so the code editor can show the real
+    // thing rather than an empty box. Fetched at runtime; a ruleset
+    // registered from pasted text has none and shows its own text.
+    sourceUrl: new URL('./territory.js', import.meta.url).href,
     blurb: 'Expansion, economy, and war on an endless grid.',
     minPlayers: 1,
     maxPlayers: 4,
@@ -44,6 +48,7 @@ const ENTRIES = [
   },
   {
     ruleset: checkers,
+    sourceUrl: new URL('./checkers.js', import.meta.url).href,
     blurb: 'English draughts. Jumps are compulsory; chains run to the end.',
     minPlayers: 2,
     maxPlayers: 2,
@@ -55,6 +60,7 @@ const ENTRIES = [
   },
   {
     ruleset: chess,
+    sourceUrl: new URL('./chess.js', import.meta.url).href,
     blurb: 'The standard game, castling and en passant included.',
     minPlayers: 2,
     maxPlayers: 2,
@@ -88,6 +94,8 @@ export function registerRuleset(ruleset, meta = {}) {
     maxPlayers: meta.maxPlayers ?? 2,
     needsPlacement: meta.needsPlacement ?? false,
     defaultPlayers: meta.defaultPlayers || [{ name: 'Player 1' }, { name: 'Player 2' }],
+    sourceUrl: meta.sourceUrl || null,
+    source: meta.source || null,      // set for rulesets pasted in by hand
     custom: meta.custom ?? false,
     ruleset,
   };

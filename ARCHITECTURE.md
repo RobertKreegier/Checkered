@@ -338,6 +338,33 @@ learns a game's vocabulary. (This came out of a guard test catching
   renderer or the UI learns a game's vocabulary; one of them caught
   `main.js` reading `player.armory`, which is why seats now carry
   neutral `colors.primary` / `colors.accent`. Suite at 174 tests.
+- **2026-09-02 · board.js, styles.css, main.js, rulesets/index.js** —
+  Visual and editor work.
+
+  Counted pieces are drawn as a physical column again: `board.js` emits
+  one `<i class="chip">` per unit counted, tagged with the counter's
+  `kind`, and elides past `COLUMN_CAP` with the break marked so height
+  isn't read as an exact figure. This stays generic — it is driven by
+  the `counters` a ruleset already supplies, so chess and checkers,
+  which count nothing, keep their glyphs untouched.
+
+  Filled buttons now brighten on hover rather than darkening; darkening
+  read as disabled. The guard test was updated to assert the new intent
+  rather than deleted.
+
+  Both editors now open showing something real. The ruleset registry
+  carries a `sourceUrl` per game, so the code editor fetches and shows
+  the actual file, and can either apply an edit to the running game or
+  register it as a separate ruleset. Live application is refused when
+  `UI.online` is set — rules pin at the start of a network match. The
+  styling editor opens with a starter sheet listing the variables and
+  selectors actually in use, with values read off the live page rather
+  than written into the file, plus a button to load the whole shipped
+  stylesheet for anything the starter doesn't mention.
+
+  Note: both editors fetch their own source, so the page must be served
+  over http. Opened from disk they show an explanatory message instead
+  of failing silently. Suite at 229 tests.
 - **2026-09-01 · ai-api.js, engine.js, rulesets, main.js** — The AI
   layer. `src/ai-api.js` holds the contract, a generic evaluator, a
   greedy opponent, and an AI registry mirroring the ruleset one. Two
