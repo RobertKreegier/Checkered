@@ -20,6 +20,16 @@ import { applyTheme, loadTheme, saveTheme, resetTheme, THEME_KEY } from './theme
 
 const $ = sel => document.querySelector(sel);
 
+/**
+ * The wordmark carries the loaded game's name: "Checkered Territory".
+ * It reads from the registry entry rather than from anything the engine
+ * knows, so the UI still learns nothing about the game itself.
+ */
+function setWordmark(name) {
+  const el = $('#gamename');
+  if (el) el.textContent = name || '';
+}
+
 const UI = {
   engine: null,
   entry: null,
@@ -34,6 +44,7 @@ const UI = {
    ============================================================ */
 
 function openPicker() {
+  setWordmark('');
   const games = allRulesets();
   let chosen = games[0];
   let count = Math.max(2, chosen.minPlayers);
@@ -54,7 +65,7 @@ function openPicker() {
     for (let n = chosen.minPlayers; n <= chosen.maxPlayers; n++) range.push(n);
 
     modal(`
-      <h2>Board<span>works</span></h2>
+      <h2>Check<span>ered</span></h2>
       <p class="sub">One engine · any game that fits a grid</p>
       <div class="eyebrow">Choose a game</div>
       ${games.map(g => `
@@ -119,6 +130,7 @@ function startGame(entry, players) {
 
   UI.engine.onChange(() => { refresh(); });
   UI.board.attach(UI.engine);
+  setWordmark(entry.name);
   closeModal();
   refresh();
 }
@@ -368,14 +380,24 @@ function flash(msg) {
    MODALS
    ============================================================ */
 
+/**
+ * Resolve the modal element on first use rather than at boot. Anything
+ * that opens a dialog before boot() has run would otherwise die on a
+ * null, which is easy to hit and gives a blank page instead of an error.
+ */
 function modal(html) {
+  // Re-resolve if the cached node is stale — it can be detached by a
+  // re-render, and writing into an orphaned element fails silently,
+  // which looks like "the dialog just didn't open".
+  if (!modal.el || !modal.el.isConnected) modal.el = $('#modal');
+  if (!modal.el) return;
   modal.el.innerHTML = html;
-  $('#veil').classList.add('open');
+  $('#veil')?.classList.add('open');
 }
 modal.el = null;
 
 function closeModal() {
-  $('#veil').classList.remove('open');
+  $('#veil')?.classList.remove('open');
 }
 
 /** A very small markdown subset — enough for the rules panels. */
@@ -515,11 +537,16 @@ function showTheme() {
 }
 
 function confirmNew() {
+  // Nothing to lose before a game starts, or once one has finished.
+  if (!UI.engine || UI.engine.isOver()) return openPicker();
+
   modal(`<div class="rules">
-    <h2>New <span>game?</span></h2>
-    <p>The board and the whole record go with it.</p>
+    <h2>Leave this <span>game?</span></h2>
+    <p class="sub">${UI.entry ? UI.entry.name : ''}</p>
+    <p>You'll go back to the game list. The board and the whole record go
+    with it \u2014 there's no way back to this position afterwards.</p>
     <div class="btnrow" style="margin-top:18px">
-      <button class="primary" id="yes">Start a new game</button>
+      <button class="primary" id="yes">Leave and choose a game</button>
       <button id="no">Keep playing</button>
     </div></div>`);
   $('#yes').onclick = openPicker;
@@ -531,13 +558,21 @@ function confirmNew() {
    ============================================================ */
 
 export function boot() {
-  modal.el = $('#modal');
   applyTheme(loadTheme());
 
   UI.board = new BoardView($('#boardwrap'), {
     onCellClick,
     onCellHover: () => {},
   });
+
+  const wordmark = $('#wordmark');
+  if (wordmark) {
+    wordmark.onclick = confirmNew;
+    // It's a real control, so it should answer the keyboard too.
+    wordmark.onkeydown = e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); confirmNew(); }
+    };
+  }
 
   $('#zin').onclick = () => UI.board.zoomAt(1.15, 0, 0);
   $('#zout').onclick = () => UI.board.zoomAt(1 / 1.15, 0, 0);
@@ -566,4 +601,4 @@ export function boot() {
 
 if (typeof document !== 'undefined' && document.getElementById('modal')) boot();
 
-export { UI, onCellClick, currentActions };
+export { UI, onCellClick, currentActions, setWordmark, confirmNew, openPicker };

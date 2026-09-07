@@ -5,7 +5,12 @@
  * play the same match looking at completely different boards.
  */
 
-export const THEME_KEY = 'boardworks.theme.css';
+export const THEME_KEY = 'checkered.theme.css';
+
+/* The project was called Boardworks until 2026-08-31. Anyone who had
+ * written their own CSS by then still has it under the old key, so read
+ * it once and move it across rather than silently losing their work. */
+const LEGACY_KEY = 'boardworks.theme.css';
 
 let styleEl = null;
 
@@ -22,7 +27,15 @@ export function applyTheme(css) {
 
 export function loadTheme() {
   try {
-    return localStorage.getItem(THEME_KEY) || '';
+    const current = localStorage.getItem(THEME_KEY);
+    if (current !== null) return current;
+    const legacy = localStorage.getItem(LEGACY_KEY);
+    if (legacy !== null) {
+      localStorage.setItem(THEME_KEY, legacy);
+      localStorage.removeItem(LEGACY_KEY);
+      return legacy;
+    }
+    return '';
   } catch {
     return '';               // private browsing, storage disabled, etc.
   }

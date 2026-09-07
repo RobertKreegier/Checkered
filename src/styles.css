@@ -45,6 +45,17 @@ body {
 
 #boardwrap { position: relative; background: var(--felt); overflow: hidden; }
 
+/* Dragging to pan would otherwise sweep a text selection across every
+ * counter and label it crosses, since those are real text nodes. The
+ * board is a control surface, not prose — nothing on it is meant to be
+ * selected. (The panel and the log stay selectable.) */
+.board-view,
+.board-view * {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
 .board-view { width: 100%; height: 100%; }
 .board-root { position: absolute; inset: 0; cursor: crosshair; touch-action: none; }
 .board-layer { position: absolute; inset: 0; }
@@ -100,8 +111,13 @@ body {
 }
 
 /* chess and checkers draw a glyph */
-.piece.white, .piece.light { color: #F2F5F3; text-shadow: 0 1px 3px rgba(0, 0, 0, .8); }
-.piece.black, .piece.dark { color: #1A2422; text-shadow: 0 1px 2px rgba(255, 255, 255, .25); }
+/* The seat's own color wins. A ruleset hands its colors down through
+ * describeCell, so hardcoding a shade here would quietly override the
+ * players' choices — which it did until 2026-08-31. The light/dark
+ * classes only decide which way the shadow falls, for contrast. */
+.piece { color: var(--unit-color, var(--chalk)); }
+.piece.white, .piece.light { text-shadow: 0 1px 3px rgba(0, 0, 0, .85); }
+.piece.black, .piece.dark { text-shadow: 0 1px 2px rgba(255, 255, 255, .28); }
 .piece.king { filter: drop-shadow(0 0 5px var(--brass)); }
 .piece:not(.stack) { font-size: 2.4em; }
 
@@ -160,6 +176,11 @@ body {
   text-transform: uppercase; margin: 0;
 }
 .wordmark span { color: var(--brass); }
+.wordmark { cursor: pointer; transition: .12s; }
+.wordmark:hover { opacity: .82; }
+.wordmark:focus-visible { outline: 2px solid var(--brass); outline-offset: 3px; }
+/* Before a game loads there is no second half, so don't leave a gap. */
+.wordmark span:empty { display: none; }
 .tagline {
   font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em;
   text-transform: uppercase; color: var(--mute); margin-top: 6px;
