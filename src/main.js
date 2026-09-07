@@ -204,8 +204,12 @@ function commit(entry) {
     UI.engine.applyAction(entry.action, entry.actor);
     UI.lastMove = { from: entry.from, to: entry.to };
     UI.pendingTargets = null;
-    // Keep the selection on the destination so chains feel continuous.
-    UI.selected = entry.to || null;
+    // Keep the selection on the destination so chains feel continuous —
+    // but only for actions that moved something. An action with no
+    // origin (placing an opening piece) isn't a chain, and holding a
+    // selection afterwards would hide the next player's own placement
+    // highlights, so they'd never see where they are allowed to go.
+    UI.selected = entry.from ? (entry.to || null) : null;
   } catch (err) {
     flash(err.message);
   }
@@ -231,10 +235,13 @@ function refresh() {
       if (same(a.from, UI.selected) && a.to) marks.set(key(a.to), 'target');
     }
   }
-  // Before anything is selected, show where a placement could go.
+  // Before anything is selected, show where a placement could go. This
+  // gets its own mark rather than reusing 'target': a placement field
+  // covers the whole viewport, and the dashed border that reads well on
+  // a handful of move targets becomes noise at that scale.
   if (!UI.selected) {
     for (const a of actions) {
-      if (!a.from && a.to) marks.set(key(a.to), 'target');
+      if (!a.from && a.to) marks.set(key(a.to), 'place');
     }
   }
 
@@ -601,4 +608,4 @@ export function boot() {
 
 if (typeof document !== 'undefined' && document.getElementById('modal')) boot();
 
-export { UI, onCellClick, currentActions, setWordmark, confirmNew, openPicker };
+export { UI, onCellClick, currentActions, setWordmark, confirmNew, openPicker, refresh };

@@ -81,6 +81,15 @@ body {
   border: 2px dashed rgba(200, 162, 74, .85);
 }
 .cell.hl-origin { background: rgba(231, 237, 233, .08); }
+
+/* Somewhere an opening piece may go. Deliberately quieter than
+ * .hl-target: this can cover every square on screen at once, so it
+ * reads as a wash with the excluded ground showing through as holes,
+ * rather than a few hundred dashed boxes competing for attention. */
+.cell.hl-place {
+  background: rgba(200, 162, 74, .06);
+  box-shadow: inset 0 0 0 1px rgba(200, 162, 74, .20);
+}
 .cell.hl-last { box-shadow: inset 0 0 0 2px rgba(200, 162, 74, .35); }
 
 .cell[data-label]::before {
@@ -210,6 +219,15 @@ button {
   padding: 9px 10px; cursor: pointer; border-radius: 2px; transition: .12s;
 }
 button:hover:not(:disabled) { border-color: var(--brass); color: var(--brass); }
+/* Filled buttons already sit on brass, so the generic hover above would
+ * paint brass text on a brass ground and erase the label. Darken the
+ * fill instead and keep the ink text. */
+button.on:hover:not(:disabled),
+button.primary:hover:not(:disabled) {
+  background: var(--brass-dim);
+  border-color: var(--brass-dim);
+  color: var(--ink);
+}
 button:disabled { opacity: .3; cursor: not-allowed; }
 button.on, button.primary { background: var(--brass); color: var(--ink); border-color: var(--brass); font-weight: 700; }
 button.primary { flex: 1; }

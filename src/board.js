@@ -65,8 +65,11 @@ export class BoardView {
   }
 
   panBy(dx, dy) {
+    // Board y grows upward, screen y grows downward, so the vertical
+    // term is added where the horizontal one is subtracted. Dragging
+    // down must bring the ground down with the cursor.
     this.cam.x -= dx / this.scale;
-    this.cam.y -= dy / this.scale;
+    this.cam.y += dy / this.scale;
     this.constrain();
     this.draw();
   }
@@ -311,8 +314,16 @@ export class BoardView {
     const tags = el.lastChild;
 
     if (!view) {
+      // Cells are pooled and reused, so an emptied one has to be wiped
+      // completely. Leaving any of these behind lets the last occupant
+      // bleed through: a stale `label` shows a caption on bare ground,
+      // and a stale `sig` convinces the next occupant it is already
+      // drawn, so its piece never appears.
       if (slot.childNodes.length) slot.textContent = '';
       if (tags.childNodes.length) tags.textContent = '';
+      delete slot.dataset.sig;
+      delete tags.dataset.html;
+      delete el.dataset.label;
       for (const name of el.dataset.vars ? el.dataset.vars.split(' ') : []) {
         el.style.removeProperty(name);
       }
