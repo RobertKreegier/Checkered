@@ -18,7 +18,9 @@ function setupDom() {
   const dom = new JSDOM(`<!doctype html><html><body>
     <div id="app"><div id="boardwrap"><button id="zin"></button>
     <button id="zout"></button><button id="zhome"></button></div>
-    <aside id="panel"><div id="pbody"></div><div id="pfoot"></div></aside></div>
+    <aside id="panel">
+      <h1 class="wordmark" id="wordmark">Checkered <span id="gamename"></span></h1>
+      <div id="pbody"></div><div id="pfoot"></div></aside></div>
     <div class="veil" id="veil"><div class="modal" id="modal"></div></div>
   </body></html>`, { pretendToBeVisual: true, url: 'https://example.test/' });
 
@@ -56,7 +58,9 @@ function gameFor(id) {
 /** Boot main.js against a live engine, bypassing the picker. */
 async function mountUI(id) {
   setupDom();
-  const main = await import('../src/main.js?ui=' + id);
+  // A fresh module per mount: main.js caches DOM references, and a
+  // cached module would hold nodes from a previous test's document.
+  const main = await import(`../src/main.js?ui=${id}&t=${Math.random()}`);
   const { UI } = main;
   const { BoardView } = await import('../src/board.js');
   const { eng, entry } = gameFor(id);
@@ -130,7 +134,7 @@ for (const entry of allRulesets()) {
 test('an ambiguous square offers a choice, and picking one applies it', async () => {
   // A chess promotion is the clearest case: four actions, one square.
   setupDom();
-  const main = await import('../src/main.js?promo');
+  const main = await import('../src/main.js?promo&t=' + Math.random());
   const { BoardView } = await import('../src/board.js');
   const chess = getRuleset('chess');
   const eng = new Engine(chess.ruleset, {
@@ -174,4 +178,104 @@ test('main.js contains no game-specific branching', async () => {
     assert.ok(!new RegExp(`\\b${word}\\b`, 'i').test(code),
       `main.js branches on "${word}" — the UI should stay generic`);
   }
+});
+
+/* ---------- the wordmark: shows the game, and leaves it ---------- */
+
+test('the wordmark names whichever game is loaded', async () => {
+  const { main } = await mountUI('chess');
+  main.setWordmark(getRuleset('chess').name);
+  assert.equal(document.getElementById('gamename').textContent, 'Chess');
+
+  // Switching games must not leave the old name behind.
+  main.setWordmark(getRuleset('territory').name);
+  assert.equal(document.getElementById('gamename').textContent, 'Territory');
+});
+
+test('the wordmark is empty while no game is loaded', async () => {
+  const { main } = await mountUI('chess');
+  main.setWordmark('Chess');
+  main.openPicker();
+  assert.equal(document.getElementById('gamename').textContent, '',
+    'the picker should not claim a game is still running');
+});
+
+test('clicking the wordmark asks before abandoning a live game', async () => {
+  const { main, eng } = await mountUI('territory');
+  const before = eng.fingerprint();
+
+  main.confirmNew();
+  const veil = document.getElementById('veil');
+  assert.ok(veil.classList.contains('open'), 'it should prompt, not just quit');
+  assert.match(document.getElementById('modal').textContent, /Leave this game/);
+  assert.equal(eng.fingerprint(), before, 'and change nothing until answered');
+
+  // Backing out leaves the game exactly as it was.
+  document.getElementById('no').onclick();
+  assert.ok(!veil.classList.contains('open'));
+  assert.equal(eng.fingerprint(), before);
+});
+
+test('confirming takes you back to the game list', async () => {
+  const { main } = await mountUI('territory');
+  main.confirmNew();
+  document.getElementById('yes').onclick();
+
+  const modalText = document.getElementById('modal').textContent;
+  assert.match(modalText, /Choose a game/, 'the picker is showing');
+  assert.equal(document.getElementById('gamename').textContent, '');
+});
+
+test('a finished game skips the are-you-sure prompt', async () => {
+  const { main } = await mountUI('chess');
+  // Fool's mate: the fastest way to a real terminal state.
+  const eng = main.UI.engine;
+  for (const mv of [
+    { type: 'move', x: 5, y: 1, tx: 5, ty: 2 },
+    { type: 'move', x: 4, y: 6, tx: 4, ty: 4, double: true },
+    { type: 'move', x: 6, y: 1, tx: 6, ty: 3, double: true },
+    { type: 'move', x: 3, y: 7, tx: 7, ty: 3 },
+  ]) eng.applyAction(mv);
+  assert.ok(eng.isOver(), 'the game should be over');
+
+  main.confirmNew();
+  assert.match(document.getElementById('modal').textContent, /Choose a game/,
+    'nothing is at stake, so go straight to the list');
+});
+
+/* ---------- the page shell the UI depends on ---------- */
+
+test('index.html provides the hooks main.js reaches for', async () => {
+  const fs = await import('node:fs');
+  const html = await fs.promises.readFile(new URL('../index.html', import.meta.url), 'utf8');
+  for (const id of ['wordmark', 'gamename', 'pbody', 'pfoot', 'veil', 'modal', 'boardwrap']) {
+    assert.match(html, new RegExp(`id="${id}"`), `index.html is missing #${id}`);
+  }
+  assert.match(html, /Checkered/, 'the wordmark should say Checkered');
+  assert.doesNotMatch(html, /Boardworks/i, 'the old project name should be gone');
+});
+
+test('the board suppresses text selection', async () => {
+  const fs = await import('node:fs');
+  const css = await fs.promises.readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+  // Counters and labels are real text nodes, so dragging to pan would
+  // otherwise sweep a selection across every square it crosses.
+  assert.match(css, /\.board-view[^}]*user-select:\s*none|user-select:\s*none/,
+    'the board must not be selectable');
+  const block = css.slice(css.indexOf('.board-view,'), css.indexOf('.board-view,') + 300);
+  assert.match(block, /user-select:\s*none/);
+  assert.match(block, /-webkit-user-select:\s*none/, 'Safari needs the prefix');
+});
+
+test('a seat\u2019s chosen color reaches the piece, not a hardcoded shade', async () => {
+  const fs = await import('node:fs');
+  const css = await fs.promises.readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+  // Rulesets pass seat colors down through describeCell; a fixed color
+  // on .piece.light / .piece.dark silently overrides the player's pick.
+  assert.match(css, /\.piece\s*\{[^}]*color:\s*var\(--unit-color/,
+    '.piece should take its color from the seat');
+  const light = css.match(/\.piece\.white,\s*\.piece\.light\s*\{([^}]*)\}/);
+  assert.ok(light, 'the light-piece rule should still exist for contrast');
+  assert.doesNotMatch(light[1], /(^|[^-])color:\s*#/,
+    'it must not hardcode a color over the seat\u2019s own');
 });
