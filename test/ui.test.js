@@ -45,13 +45,19 @@ const OPENINGS = {
 };
 
 function gameFor(id) {
+  // A "-fresh" suffix skips the opening actions, so a test can watch the
+  // placement phase itself rather than the game that follows it.
+  const fresh = id.endsWith('-fresh');
+  if (fresh) id = id.slice(0, -'-fresh'.length);
   const entry = getRuleset(id);
   const eng = new Engine(entry.ruleset, {
     players: entry.defaultPlayers.slice(0, Math.max(2, entry.minPlayers)),
     config: id === 'territory' ? { scatterStacks: 1 } : {},
     seed: 3,
   });
-  for (const { action, actorId } of OPENINGS[id] || []) eng.applyAction(action, actorId);
+  if (!fresh) {
+    for (const { action, actorId } of OPENINGS[id] || []) eng.applyAction(action, actorId);
+  }
   return { eng, entry };
 }
 
@@ -82,16 +88,21 @@ for (const entry of allRulesets()) {
     const { main, UI, eng } = await mountUI(entry.id);
     const actions = main.currentActions();
 
-    // Find an action that actually moves between two distinct squares.
+    // Two shapes of game: one where a piece travels between squares, and
+    // one where something simply appears on a square. Both have to work
+    // through the same interaction, which is the point being tested.
     const step = actions.find(a => a.from && a.to &&
-      !(a.from.x === a.to.x && a.from.y === a.to.y));
-    assert.ok(step, `${entry.name} offered no square-to-square action`);
+      !(a.from.x === a.to.x && a.from.y === a.to.y))
+      || actions.find(a => !a.from && a.to);
+    assert.ok(step, `${entry.name} offered no action pointing at a square`);
 
     const before = eng.fingerprint();
     const actionCount = eng.history.length;
 
-    main.onCellClick(step.from, {});
-    assert.deepEqual(UI.selected, step.from, 'the click selected the origin');
+    if (step.from) {
+      main.onCellClick(step.from, {});
+      assert.deepEqual(UI.selected, step.from, 'the click selected the origin');
+    }
 
     main.onCellClick(step.to, {});
 
@@ -108,11 +119,12 @@ for (const entry of allRulesets()) {
 
   test(`${entry.name}: inspecting never changes the game`, async () => {
     const { main, UI, eng } = await mountUI(entry.id);
-    const step = main.currentActions().find(a => a.from && a.to);
+    const step = main.currentActions().find(a => a.to);
+    assert.ok(step, `${entry.name} offered no action pointing at a square`);
     const before = eng.fingerprint();
     const acted = eng.history.length;   // openings already count as actions
 
-    main.onCellClick(step.from, { inspect: true });
+    if (step.from) main.onCellClick(step.from, { inspect: true });
     main.onCellClick(step.to, { inspect: true });
 
     assert.equal(eng.fingerprint(), before, 'inspect must be read-only');
@@ -278,4 +290,107 @@ test('a seat\u2019s chosen color reaches the piece, not a hardcoded shade', asyn
   assert.ok(light, 'the light-piece rule should still exist for contrast');
   assert.doesNotMatch(light[1], /(^|[^-])color:\s*#/,
     'it must not hardcode a color over the seat\u2019s own');
+});
+
+/* ---------- opening placement ---------- */
+
+test('every player placing an opening piece sees where they may go', async () => {
+  const { main, UI } = await mountUI('territory-fresh');
+  const eng = UI.engine;
+
+  // Intercept what the board is told to highlight on a normal refresh.
+  const marked = () => {
+    const m = new Map();
+    const orig = UI.board.setHighlights.bind(UI.board);
+    UI.board.setHighlights = x => { for (const [k, v] of x) m.set(k, v); return orig(x); };
+    main.refresh();
+    UI.board.setHighlights = orig;
+    return [...m].filter(([, v]) => v === 'place').map(([k]) => k);
+  };
+
+  // Player one: a field of squares to choose from.
+  UI.selected = null;
+  const first = marked();
+  assert.ok(first.length > 20, `player one saw ${first.length} placement squares`);
+
+  // Place, then check player two gets their own field rather than an
+  // empty board — the bug was that the selection left over from the
+  // placement suppressed every highlight.
+  const place = main.currentActions().find(a => !a.from);
+  main.onCellClick(place.to, {});
+  assert.equal(UI.selected, null, 'a placement is not a chain, so nothing stays selected');
+
+  const second = marked();
+  assert.ok(second.length > 20, `player two saw only ${second.length} placement squares`);
+});
+
+test('the second player cannot place on top of the first', async () => {
+  const { main, UI } = await mountUI('territory-fresh');
+  const eng = UI.engine;
+
+  const place = main.currentActions().find(a => !a.from);
+  main.onCellClick(place.to, {});
+  const taken = place.to;
+
+  // The spacing rule should remove the neighbourhood of the first camp
+  // from what the second player is offered.
+  const offered = main.currentActions().filter(a => !a.from).map(a => `${a.to.x},${a.to.y}`);
+  const spacing = eng.config.campSpacing;
+  for (const k of offered) {
+    const [x, y] = k.split(',').map(Number);
+    const gap = Math.max(Math.abs(x - taken.x), Math.abs(y - taken.y));
+    assert.ok(gap >= spacing,
+      `${k} is only ${gap} from the first camp, closer than the ${spacing} required`);
+  }
+  assert.ok(offered.length > 0, 'and there should still be somewhere to go');
+});
+
+test('filled buttons stay readable on hover', async () => {
+  const fs = await import('node:fs');
+  const css = await fs.promises.readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+  // The generic hover paints text brass; on a brass-filled button that
+  // erases the label, so filled buttons need their own hover rule.
+  const rule = css.match(/button\.on:hover[^{]*,\s*\n?button\.primary:hover[^{]*\{([^}]*)\}/);
+  assert.ok(rule, 'filled buttons need a hover rule of their own');
+  assert.match(rule[1], /color:\s*var\(--ink\)/, 'the label must stay dark');
+  // Darkening read as "disabled"; a filled button should look more
+  // alive on hover, not less.
+  assert.match(rule[1], /background:\s*var\(--brass-bright\)/,
+    'the fill should brighten, not darken');
+});
+
+test('placement squares are marked apart from move targets', async () => {
+  const { main, UI } = await mountUI('territory-fresh');
+  const marks = new Map();
+  UI.board.setHighlights = x => { for (const [k, v] of x) marks.set(k, v); };
+  main.refresh();
+
+  const kinds = new Set(marks.values());
+  assert.ok(kinds.has('place'), 'an opening field should use its own mark');
+  assert.ok(!kinds.has('target'),
+    'placement must not borrow the move-target treatment \u2014 it covers the whole view');
+
+  const fs = await import('node:fs');
+  const css = await fs.promises.readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+  const place = css.match(/\.cell\.hl-place\s*\{([^}]*)\}/);
+  assert.ok(place, 'hl-place needs a style of its own');
+  assert.doesNotMatch(place[1], /dashed/, 'the quiet treatment should not be dashed');
+});
+
+test('every built-in ruleset knows where its own source lives', async () => {
+  const { allRulesets } = await import('../rulesets/index.js');
+  for (const e of allRulesets()) {
+    assert.ok(e.sourceUrl || e.source,
+      `${e.id} has no source for the code editor to show`);
+  }
+});
+
+test('a ruleset registered from pasted text carries its own text', async () => {
+  const { registerRuleset, getRuleset, unregisterRuleset } = await import('../rulesets/index.js');
+  const { default: chess } = await import('../rulesets/chess.js');
+  const variant = { ...chess, id: 'chess-variant', name: 'Chess Variant' };
+  const entry = registerRuleset(variant, { source: '// pasted', custom: true });
+  assert.equal(entry.source, '// pasted', 'the editor should show what was pasted');
+  assert.equal(getRuleset('chess-variant').source, '// pasted');
+  unregisterRuleset('chess-variant');
 });

@@ -101,8 +101,13 @@ for (const entry of allRulesets()) {
 
   test(`${name}: occupiedCells agrees with describeCell`, () => {
     const eng = gameFor(entry.id);
+    // Some games start on a bare board — Tic Tac Toe has nothing on it
+    // until someone moves — so make a move before expecting anything.
+    if (!entry.ruleset.occupiedCells(eng.state).length) {
+      eng.applyAction(eng.legalActions(eng.state.cur)[0], eng.state.cur);
+    }
     const cells = entry.ruleset.occupiedCells(eng.state);
-    assert.ok(cells.length > 0, 'a fresh game should have something on the board');
+    assert.ok(cells.length > 0, 'after a move something should be on the board');
     for (const { x, y } of cells) {
       assert.ok(entry.ruleset.describeCell(eng.state, x, y),
         `${x},${y} was listed as occupied but describes as empty`);

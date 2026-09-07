@@ -9,6 +9,8 @@
  * runtime through `registerRuleset()` instead of being listed here.
  */
 
+import tictactoe from './tictactoe.js';
+import hexapawn from './hexapawn.js';
 import territory from './territory.js';
 import checkers from './checkers.js';
 import chess from './chess.js';
@@ -29,6 +31,32 @@ import { validateRuleset } from '../src/ruleset-api.js';
  * is what lets a game replay exactly — see ARCHITECTURE.md.
  */
 const ENTRIES = [
+  // The two worked examples come first: they are the ones a newcomer
+  // should open the code editor on.
+  {
+    ruleset: tictactoe,
+    sourceUrl: new URL('./tictactoe.js', import.meta.url).href,
+    blurb: 'Three in a row. A worked example — the code is written to be read.',
+    minPlayers: 2,
+    maxPlayers: 2,
+    needsPlacement: false,
+    defaultPlayers: [
+      { name: 'Crosses', colors: { primary: '#E2574C', accent: '#F2C14E' } },
+      { name: 'Noughts', colors: { primary: '#3E8FD0', accent: '#8FD8E8' } },
+    ],
+  },
+  {
+    ruleset: hexapawn,
+    sourceUrl: new URL('./hexapawn.js', import.meta.url).href,
+    blurb: 'Three pawns each on a tiny board. The example for pieces that move.',
+    minPlayers: 2,
+    maxPlayers: 2,
+    needsPlacement: false,
+    defaultPlayers: [
+      { name: 'White', colors: { primary: '#E7EDE9', accent: '#C8A24A' } },
+      { name: 'Black', colors: { primary: '#2C3A38', accent: '#7A6430' } },
+    ],
+  },
   {
     ruleset: territory,
     // Where the source lives, so the code editor can show the real
@@ -123,5 +151,5 @@ export function unregisterRuleset(id) {
   return registry.delete(id);
 }
 
-export { territory, checkers, chess };
+export { tictactoe, hexapawn, territory, checkers, chess };
 export default allRulesets;

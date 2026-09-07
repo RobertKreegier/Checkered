@@ -338,6 +338,36 @@ learns a game's vocabulary. (This came out of a guard test catching
   renderer or the UI learns a game's vocabulary; one of them caught
   `main.js` reading `player.armory`, which is why seats now carry
   neutral `colors.primary` / `colors.accent`. Suite at 174 tests.
+- **2026-09-03 · rulesets/tictactoe.js, rulesets/hexapawn.js** — Two
+  worked examples, written to be read rather than to be impressive.
+  Territory, Checkers, and Chess are real games and none of them is a
+  reasonable first thing to open.
+
+  `tictactoe.js` covers the shape of a ruleset: the five required
+  methods, the rule that the state is the whole game, no `Math.random`,
+  no clock, no DOM. It carries settings (board size, line length, a
+  misère toggle) mostly to demonstrate `configSpec` — misère is one line
+  of code and a completely different game, which is a good thing for a
+  beginner to notice.
+
+  `hexapawn.js` is the second lesson: pieces that move and capture,
+  which is where placement games stop being enough. It is *shorter* than
+  Tic Tac Toe, because working out who has won is easier than checking
+  for lines. It also shows the direction trick — each player gets a
+  `forward` of +1 or -1, so one piece of movement code serves both
+  sides rather than being written twice.
+
+  Both supply their own `evaluate()`. The generic evaluator counts who
+  owns more, which is meaningless in Tic Tac Toe, where *where* the
+  squares are is everything. Greedy beats random 17-2 at Tic Tac Toe and
+  17-3 at Hexapawn.
+
+  Two test assumptions broke and were corrected rather than worked
+  around: the AI battery assumed every game starts with pieces on the
+  board (Tic Tac Toe starts bare), and the UI tests assumed every game
+  moves a piece from one square to another (Tic Tac Toe only places, so
+  `from` is null). Both now cover either shape, which is the honest fix
+  — the interaction is supposed to handle both. Suite at 281 tests.
 - **2026-09-02 · rulesets/territory.js, main.js, styles.css** — The
   opening ground is now scattered in `createInitialState`, before anyone
   places a camp, so players can see the neutral stacks and loose armory
