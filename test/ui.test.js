@@ -394,3 +394,56 @@ test('a ruleset registered from pasted text carries its own text', async () => {
   assert.equal(getRuleset('chess-variant').source, '// pasted');
   unregisterRuleset('chess-variant');
 });
+
+/* ---------- playing someone else ---------- */
+
+test('undo is refused while a match is running', async () => {
+  // Undo is local. In a shared game it would put the two sides on
+  // different boards, and every move afterwards would be reported as a
+  // disagreement with no sign of the real cause.
+  const { main, UI } = await mountUI('chess');
+  const { hostMatch } = await import('../src/match.js');
+  const { getRuleset } = await import('../rulesets/index.js');
+
+  const entry = getRuleset('chess');
+  const { match } = hostMatch({ entry, players: entry.defaultPlayers, seed: 5 });
+  UI.match = match;
+  UI.engine = match.engine;
+  UI.online = true;
+
+  match.act(match.engine.legalActions(0)[0]);
+  main.refresh();
+
+  const undo = document.getElementById('undo');
+  assert.ok(undo.hasAttribute('disabled'), 'the undo button should be disabled in a match');
+  assert.equal(document.querySelectorAll('#log .undoable').length, 0,
+    'and the record should not offer to rewind either');
+
+  UI.match = null;
+  UI.online = false;
+});
+
+test('the board is not clickable on the other player\u2019s turn', async () => {
+  const { main, UI } = await mountUI('chess');
+  const { hostMatch } = await import('../src/match.js');
+  const { getRuleset } = await import('../rulesets/index.js');
+
+  const entry = getRuleset('chess');
+  const { match } = hostMatch({ entry, players: entry.defaultPlayers, seed: 5 });
+  UI.match = match;
+  UI.engine = match.engine;
+
+  match.act(match.engine.legalActions(0)[0]);        // now it is seat 1's turn
+  assert.equal(match.canAct(), false);
+
+  const before = match.engine.history.length;
+  const theirs = main.currentActions().find(a => a.from && a.to);
+  if (theirs) {
+    main.onCellClick(theirs.from, {});
+    main.onCellClick(theirs.to, {});
+  }
+  assert.equal(match.engine.history.length, before,
+    'clicking during their turn must not move their pieces');
+
+  UI.match = null;
+});

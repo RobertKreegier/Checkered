@@ -22,6 +22,7 @@ import { allAis, getAi, takeTurn, positionHash, seededRandom, DEFAULT_WEIGHTS } 
 // Importing this registers the searching bot, which is what puts it in
 // the opponent list beside Greedy.
 import './ai-search.js';
+import { hostMatch, joinMatch, decodeMove, encodeMove } from './match.js';
 
 const $ = sel => document.querySelector(sel);
 
@@ -49,6 +50,11 @@ const UI = {
   thinking: false,        // an AI is mid-turn; the board is not yours
   aiSeen: null,           // positions this AI turn has already occupied
   aiTimer: null,
+
+  /** Set when playing someone else by passing codes back and forth. */
+  match: null,
+  online: false,          // rules are pinned; live editing is refused
+  invite: null,           // the code that invited the other player
 };
 
 /* ============================================================
@@ -57,6 +63,9 @@ const UI = {
 
 function openPicker() {
   clearAiTimer();
+  UI.match = null;
+  UI.online = false;
+  UI.pendingCodes = [];
   setWordmark('');
   const games = allRulesets();
   let chosen = games[0];
@@ -109,6 +118,14 @@ function openPicker() {
       <div class="btnrow" style="margin-top:12px">
         <button class="primary" id="go">Set the board</button>
         <button id="rules">Read the rules</button>
+      </div>
+      <div class="eyebrow" style="margin-top:20px">Play someone else</div>
+      <p class="hint" style="margin-top:0">No account and no server: you send
+      your friend a code, they send one back, and the game keeps step. Works
+      over any chat app.</p>
+      <div class="btnrow" style="margin-top:8px">
+        <button id="host">Invite a friend</button>
+        <button id="joinbtn">I have an invitation</button>
       </div>`);
 
     modal.el.querySelectorAll('[data-game]').forEach(el => {
@@ -126,6 +143,8 @@ function openPicker() {
       if (sel) sel.onchange = () => { seats[i] = sel.value || null; };
     }
     $('#rules').onclick = () => showRules(chosen.ruleset, paint);
+    $('#host').onclick = () => startHosting(chosen, readSeats(count));
+    $('#joinbtn').onclick = () => showJoin();
     $('#go').onclick = () => {
       const players = [];
       for (let i = 0; i < count; i++) {
@@ -146,6 +165,22 @@ function openPicker() {
   };
 
   paint();
+}
+
+/** Read the player rows out of the picker. */
+function readSeats(count) {
+  const players = [];
+  for (let i = 0; i < count; i++) {
+    const nm = $('#nm' + i);
+    players.push({
+      name: (nm?.value || 'Player ' + (i + 1)).trim(),
+      colors: {
+        primary: $('#uc' + i)?.value || '#888888',
+        accent: $('#ac' + i)?.value || '#cccccc',
+      },
+    });
+  }
+  return players;
 }
 
 function startGame(entry, players, seats = []) {
@@ -170,6 +205,138 @@ function startGame(entry, players, seats = []) {
   closeModal();
   refresh();
   maybeRunAi();
+}
+
+/* ============================================================
+   PLAYING SOMEONE ELSE
+   ============================================================ */
+
+/** Take a live match and put it on the board. */
+function adoptMatch(match, entry) {
+  clearAiTimer();
+  UI.match = match;
+  UI.entry = entry;
+  UI.online = true;              // rules are pinned for the match
+  UI.seats = [];                 // no bots in a match
+  UI.thinking = false;
+  UI.engine = match.engine;
+  UI.selected = null;
+  UI.pendingTargets = null;
+  UI.lastMove = null;
+
+  match.onChange(() => {
+    // The match replaces its engine when it catches up on missed moves,
+    // so re-read it rather than holding a stale reference.
+    if (UI.engine !== match.engine) {
+      UI.engine = match.engine;
+      UI.board.attach(UI.engine);
+    }
+    refresh();
+  });
+
+  UI.board.attach(UI.engine);
+  setWordmark(entry.name);
+  closeModal();
+  refresh();
+}
+
+function startHosting(entry, players) {
+  const { match, invite } = hostMatch({
+    entry,
+    config: {},
+    players: players.slice(0, 2),
+    hostSeat: 0,
+  });
+  UI.invite = invite;
+  adoptMatch(match, entry);
+  showInvite();
+}
+
+/** The invitation, ready to be sent to whoever you are playing. */
+function showInvite() {
+  modal(`<div class="rules">
+    <h2>Send this <span>invitation</span></h2>
+    <p class="sub">${UI.entry.name} \u00b7 you play first</p>
+    <p>Send this to whoever you are playing. They paste it into
+    <b>I have an invitation</b> and the two of you are on the same board.</p>
+    <textarea id="invite" spellcheck="false" style="min-height:120px">${UI.invite}</textarea>
+    <div class="btnrow" style="margin-top:12px">
+      <button class="primary" id="copy">Copy the invitation</button>
+      <button id="close">Start playing</button>
+    </div>
+    <p class="hint">Nothing is sent anywhere. The code carries the game, the
+    settings, and the shuffle, so both sides build the same board from it.</p>
+  </div>`);
+  $('#copy').onclick = () => copyFrom($('#invite'), $('#copy'), 'Copy the invitation');
+  $('#close').onclick = closeModal;
+}
+
+function showJoin() {
+  modal(`<div class="rules">
+    <h2>Join a <span>game</span></h2>
+    <p class="sub">Paste the invitation you were sent</p>
+    <textarea id="code" spellcheck="false" style="min-height:120px"
+      placeholder="Paste the invitation here"></textarea>
+    <div class="warn" id="jwarn"></div>
+    <div class="btnrow" style="margin-top:12px">
+      <button class="primary" id="join">Join</button>
+      <button id="back">Back</button>
+    </div>
+  </div>`);
+
+  $('#join').onclick = () => {
+    try {
+      const { match, descriptor } = joinMatch($('#code').value);
+      const entry = getRuleset(descriptor.rulesetId);
+      adoptMatch(match, entry);
+    } catch (err) {
+      $('#jwarn').textContent = err.message;
+    }
+  };
+  $('#back').onclick = openPicker;
+}
+
+/** Copy a field, and say so on the button so the click feels answered. */
+function copyFrom(field, button, label) {
+  field.select();
+  const done = () => {
+    if (!button) return;
+    button.textContent = 'Copied';
+    setTimeout(() => { button.textContent = label; }, 1400);
+  };
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(field.value).then(done, () => {});
+  } else if (document.execCommand) {
+    document.execCommand('copy');
+    done();
+  }
+}
+
+/** Take whatever the match wants to send and show it as one code. */
+function outgoingCode() {
+  if (!UI.match) return null;
+  const pending = UI.match.drain();
+  if (pending.length) UI.pendingCodes = (UI.pendingCodes || []).concat(pending);
+  if (!UI.pendingCodes?.length) return null;
+  return UI.pendingCodes.map(encodeMove).join('\n');
+}
+
+/** Feed in a code that arrived from the other player. */
+function receiveCode(text) {
+  const warn = $('#mwarn');
+  const lines = String(text || '').trim().split(/\s+/).filter(Boolean);
+  if (!lines.length) return;
+  try {
+    for (const line of lines) UI.match.receive(decodeMove(line));
+    // Their reply means our last move landed, so stop offering it.
+    UI.pendingCodes = [];
+    UI.selected = null;
+    UI.pendingTargets = null;
+    if (warn) warn.textContent = '';
+    refresh();
+  } catch (err) {
+    if (warn) warn.textContent = `That code could not be read: ${err.message}`;
+  }
 }
 
 /* ============================================================
@@ -276,6 +443,8 @@ function onCellClick(cell, opts) {
   // still fine — reading the position while it plays is harmless.
   if (UI.thinking && !opts.inspect) return;
   if (seatIsAi(eng.state.cur) && !opts.inspect) return;
+  // The other player's turn, or a paused match: look, don't touch.
+  if (UI.match && !UI.match.canAct() && !opts.inspect) return;
 
   const actions = currentActions();
 
@@ -313,7 +482,13 @@ function onCellClick(cell, opts) {
 
 function commit(entry) {
   try {
-    UI.engine.applyAction(entry.action, entry.actor);
+    if (UI.match) {
+      // In a match every move goes through the match layer, which
+      // applies it here and produces the code to send onward.
+      UI.match.act(entry.action, entry.actor);
+    } else {
+      UI.engine.applyAction(entry.action, entry.actor);
+    }
     UI.lastMove = { from: entry.from, to: entry.to };
     UI.pendingTargets = null;
     // Keep the selection on the destination so chains feel continuous —
@@ -410,6 +585,8 @@ function renderPanel(actions) {
       `<div class="kv"><span>${k}</span><b>${typeof v === 'boolean' ? (v ? 'yes' : 'no') : v}</b></div>`).join('')}</div>`;
   }
 
+  if (UI.match) h += matchCardHtml();
+
   // A square with several competing actions asks which one.
   if (UI.pendingTargets) {
     h += `<div class="card"><div class="rowlab">which one?</div>
@@ -450,15 +627,24 @@ function renderPanel(actions) {
   h += lines.length
     ? lines.map((e, i) => {
       const idx = eng.log.length - 1 - i;
-      return `<div class="undoable" data-undo="${idx}">${e.text}<span class="rew">↶</span></div>`;
+      // Same reason: a rewind in a match is not ours alone to make.
+      return UI.match
+        ? `<div>${e.text}</div>`
+        : `<div class="undoable" data-undo="${idx}">${e.text}<span class="rew">↶</span></div>`;
     }).join('')
     : '<div>Nothing yet.</div>';
   h += `</div>`;
 
   $('#pbody').innerHTML = h;
 
+  // Undo is local, so in a match it would quietly put the two sides on
+  // different boards — every move after it would be reported as a
+  // disagreement, with no sign of the real cause. Rewinding a shared
+  // game needs both players to agree, which is a feature, not a button.
+  const canUndo = eng.canUndo() && !UI.match;
   $('#pfoot').innerHTML = `
-    <button class="primary" id="undo" ${eng.canUndo() ? '' : 'disabled'}>↶ Undo</button>
+    <button class="primary" id="undo" ${canUndo ? '' : 'disabled'}
+      title="${UI.match ? 'Not while playing someone else' : 'Undo the last action'}">↶ Undo</button>
     <button id="rulesbtn" title="Rules">?</button>
     <button id="setbtn" title="Settings">⚙</button>
     <button id="codebtn" title="Ruleset code">&lt;/&gt;</button>
@@ -466,6 +652,59 @@ function renderPanel(actions) {
     <button id="newbtn" title="New game">⟲</button>`;
 
   bindPanel(actions);
+}
+
+/**
+ * The card that makes a code-passing game playable: what to send, and
+ * somewhere to paste what comes back.
+ */
+function matchCardHtml() {
+  const m = UI.match;
+
+  if (m.status === 'diverged') {
+    const r = m.divergenceReport();
+    return `<div class="card diverged">
+      <div class="rowlab">the match is paused</div>
+      <div class="stackname" style="font-size:20px">${r.headline}</div>
+      <p class="hint">${r.detail}</p>
+      ${r.difference ? `<div class="kv"><span>first difference</span><b>${
+        String(r.difference.path || r.difference).slice(0, 60)}</b></div>` : ''}
+      ${r.ourHash ? `<div class="kv"><span>here</span><b>${String(r.ourHash).slice(0, 12)}</b></div>
+        <div class="kv"><span>there</span><b>${String(r.theirHash).slice(0, 12)}</b></div>` : ''}
+    </div>`;
+  }
+
+  const code = outgoingCode();
+  const waiting = m.waitingOn();
+  const over = m.engine.isOver();
+
+  let h = `<div class="card match">
+    <div class="rowlab">${
+      over ? 'the game is over'
+        : code ? 'send this to your opponent'
+          : m.canAct() ? 'your move' : 'waiting for their move'}</div>`;
+
+  if (code) {
+    h += `<p class="hint">Send this to your opponent:</p>
+      <textarea id="send" class="code" spellcheck="false" readonly>${code}</textarea>
+      <div class="btnrow" style="margin:6px 0">
+        <button class="primary" id="copysend">Copy</button>
+      </div>`;
+  } else if (m.canAct()) {
+    h += `<p class="hint">Make your move, and a code to send will appear here.</p>`;
+  }
+
+  if (!over) {
+    h += `<p class="hint">${waiting || 'Their reply goes here when it arrives.'}</p>
+      <textarea id="recv" class="code" spellcheck="false"
+        placeholder="Paste their code"></textarea>
+      <div class="btnrow" style="margin-top:6px">
+        <button id="apply-code">Play their move</button>
+      </div>
+      <div class="warn" id="mwarn"></div>`;
+  }
+
+  return h + `</div>`;
 }
 
 function bindPanel(actions) {
@@ -483,10 +722,16 @@ function bindPanel(actions) {
     };
   });
   $('#undo').onclick = () => {
+    if (UI.match) return;
     UI.engine.undo();
     UI.selected = null; UI.pendingTargets = null; UI.lastMove = null;
     refresh();
   };
+  const send = $('#copysend');
+  if (send) send.onclick = () => copyFrom($('#send'), send, 'Copy');
+  const apply = $('#apply-code');
+  if (apply) apply.onclick = () => receiveCode($('#recv').value);
+
   $('#rulesbtn').onclick = () => showRules(UI.engine.ruleset, null);
   $('#setbtn').onclick = showSettings;
   $('#codebtn').onclick = showCode;

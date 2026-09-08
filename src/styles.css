@@ -269,7 +269,16 @@ body {
 .card { border: 1px solid var(--line); background: var(--felt-2); padding: 10px; margin-bottom: 14px; }
 .rowlab { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--mute); }
 .kv { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 12px; padding: 3px 0; }
-.kv b { color: var(--brass); font-weight: 700; }
+.kv b {
+  color: var(--brass);
+  font-weight: 700;
+  /* Some games report long strings here (a chess FEN, for one), and
+     they must not push the panel sideways. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+.kv > span:first-child { flex: 0 0 auto; margin-right: 10px; }
 .hint { font-size: 12px; line-height: 1.45; color: var(--mute); margin: 8px 0 0; }
 
 button {
@@ -307,6 +316,17 @@ button:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
   border: 1px solid var(--line); padding: 1px 4px; border-radius: 2px;
 }
 .card.bot { border-color: var(--brass-dim); }
+.card.match { border-color: var(--brass-dim); }
+.card.diverged { border-color: var(--danger); }
+/* Codes are meant to be selected and copied, so they stay selectable
+   even though the board around them is not. */
+textarea.code {
+  min-height: 68px;
+  font-size: 10px;
+  line-height: 1.35;
+  word-break: break-all;
+  user-select: text;
+}
 /* While a bot is thinking the board is not yours to touch. */
 .board-view.waiting .board-root { cursor: progress; }
 

@@ -338,6 +338,33 @@ learns a game's vocabulary. (This came out of a guard test catching
   renderer or the UI learns a game's vocabulary; one of them caught
   `main.js` reading `player.armory`, which is why seats now carry
   neutral `colors.primary` / `colors.accent`. Suite at 174 tests.
+- **2026-09-06 · main.js, styles.css** — Wired the match layer into the
+  interface, which is what actually makes it a feature rather than
+  groundwork. The picker gained **Invite a friend** and **I have an
+  invitation**; the host gets a code to send, the guest pastes it, and
+  both sides build the same board from it. In play, a card shows the
+  code to send after each move and takes the reply.
+
+  Verified by driving two browser tabs through a five-exchange chess
+  game: identical records on both sides, ~164 characters per move, and
+  an out-of-turn click correctly ignored.
+
+  Three things the wiring had to get right:
+
+  - **Undo is disabled in a match**, in the footer and in the record.
+    It is a local operation, so in a shared game it would put the two
+    sides on different boards and every subsequent move would be
+    reported as a disagreement with no sign of the real cause. Rewinding
+    a shared game needs both players to agree; that is a feature, not a
+    button.
+  - `UI.engine` is re-read on every match change, because the match
+    replaces its engine when it catches up on missed moves and a stale
+    reference would leave the board rendering a dead position.
+  - `UI.online` is set, which the ruleset editor already refuses to
+    apply against — the rules are pinned for the match.
+
+  Also fixed a long `summarize()` value (chess reports a FEN) pushing
+  the panel sideways. Suite at 338 tests.
 - **2026-09-06 · src/match.js** — The match layer: two machines playing
   one game, over any channel. Built before any server exists, on
   purpose. A relay is a transport and nothing more, so the layer takes

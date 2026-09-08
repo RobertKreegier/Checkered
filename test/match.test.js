@@ -373,3 +373,24 @@ test('a change notification fires on both sides', () => {
   assert.ok(hostSaw > 0, 'the mover should be told');
   assert.ok(guestSaw > 0, 'and so should the receiver');
 });
+
+/* ---------- what a match forbids ---------- */
+
+test('a match refuses a move from the seat that is not yours', () => {
+  // The UI gates on canAct(), but the layer has to refuse it too — a
+  // gate that only exists in the interface is not a rule.
+  const { host, guest } = table();
+  const action = host.engine.legalActions(0)[0];
+  host.act(action);
+  assert.throws(() => host.act(host.engine.legalActions(1)[0], 1), /not yours to play/);
+});
+
+test('a frozen match takes no further moves from either side', () => {
+  const { host, guest } = table();
+  guest.receive({
+    type: 'action', seq: 0,
+    action: host.engine.legalActions(0)[0], actorId: 0, hash: 'wrong', pin: host.pin,
+  });
+  assert.equal(guest.status, 'diverged');
+  assert.throws(() => guest.act(guest.engine.legalActions(1)[0], 1), /diverged/);
+});
