@@ -338,6 +338,48 @@ learns a game's vocabulary. (This came out of a guard test catching
   renderer or the UI learns a game's vocabulary; one of them caught
   `main.js` reading `player.armory`, which is why seats now carry
   neutral `colors.primary` / `colors.accent`. Suite at 174 tests.
+- **2026-09-06 · src/match.js** — The match layer: two machines playing
+  one game, over any channel. Built before any server exists, on
+  purpose. A relay is a transport and nothing more, so the layer takes
+  one as a parameter (`send` / `onMessage`) and handles everything
+  above it — agreeing on the game, seat gating, sending moves,
+  verifying arrivals, catching up after a gap, and freezing on
+  disagreement. All 27 tests run with no network.
+
+  What makes it small is the invariant: a game is
+  `(ruleset, config, seed, players, actions)`. So the invitation carries
+  the first four and no board — both sides derive an identical opening,
+  including Territory's random scatter, because the rng is seeded. A
+  move on the wire is one action plus the fingerprint it produced.
+  Reconnecting is just replaying the action list.
+
+  **Rules pinning** is new and was the gap in the original design. Since
+  rulesets are editable, two sides can hold different code, and then
+  *every* move diverges — the log fills with disagreements that all look
+  like separate bugs rather than one cause. `rulesPin()` fingerprints
+  id, version, config, and source text; joining with edited rules is
+  refused up front, and a mismatched pin on a move reports the real
+  reason once instead of a stream of hash mismatches.
+
+  Three transports ship: `pairedTransports()` (two matches in one
+  process, used by the tests and the reference for what a real one must
+  do), `manualTransport()` (messages queue as pasteable codes — a
+  playable correspondence game with no infrastructure at all), and none
+  at all, where `drain()` hands the caller its outgoing messages.
+
+  Divergence stays transparent per the original decision: both states,
+  both hashes, and `firstDifference()` go to the UI, with wording that
+  says a mismatch usually means edited rules rather than cheating.
+
+  Two test-design corrections worth recording. A stall test asserted
+  `status === 'stalled'`, but with a live transport the catch-up round
+  trip completes synchronously and heals it — the test now uses an
+  unconnected match to observe the stall, plus a second test for the
+  self-healing. And the AI strength tests were budgeted in
+  *milliseconds*, so they passed alone and failed under full-suite load:
+  the search simply got less done. They are budgeted by node count now.
+  **A correctness assertion must not depend on how busy the machine
+  is.** Suite at 334 tests.
 - **2026-09-05 · rulesets/territory.js** — Territory's `evaluate()`
   rebuilt around Bob's playtesting finding: **position matters less than
   production.** The old one counted chips and squares, which misses the

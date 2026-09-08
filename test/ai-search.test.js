@@ -120,7 +120,13 @@ test('a sequence-turn game is handed to the greedy player instead', () => {
 /* ---------- it is actually stronger ---------- */
 
 test('it beats the greedy player at checkers', () => {
-  const r = runLadder(getRuleset('checkers'), searchAi({ maxMillis: 60 }), greedyAi(),
+  // Budgeted by NODES, not milliseconds. A strength claim must not
+  // depend on how busy the machine is: with a wall-clock budget this
+  // test passed alone and failed inside the full suite, because the
+  // search simply got less done under load. Nodes make the work — and
+  // so the result — the same every run.
+  const r = runLadder(getRuleset('checkers'),
+    searchAi({ maxMillis: 60000, maxNodes: 12000 }), greedyAi(),
     { games: 4, maxTurns: 160 });
   assert.ok(r.score >= 0.7,
     `scored ${(r.score * 100).toFixed(0)}% against greedy — searching should win comfortably`);
@@ -129,14 +135,15 @@ test('it beats the greedy player at checkers', () => {
 
 test('it never loses at tic tac toe', () => {
   // Perfect play draws. Losing means the search is broken, not unlucky.
-  const r = runLadder(getRuleset('tictactoe'), searchAi({ maxMillis: 80 }), greedyAi(),
-    { games: 6 });
+  const r = runLadder(getRuleset('tictactoe'),
+    searchAi({ maxMillis: 60000, maxNodes: 20000 }), greedyAi(), { games: 6 });
   assert.equal(r.loss, 0, 'a searching player should never lose tic tac toe');
 });
 
 test('deeper search is at least as good as shallower', () => {
-  const deep = runLadder(getRuleset('hexapawn'), searchAi({ maxMillis: 60 }),
-    searchAi({ maxDepth: 1, maxMillis: 5 }), { games: 6 });
+  const deep = runLadder(getRuleset('hexapawn'),
+    searchAi({ maxMillis: 60000, maxNodes: 12000 }),
+    searchAi({ maxDepth: 1, maxNodes: 40 }), { games: 6 });
   assert.ok(deep.score >= 0.5,
     `looking further scored only ${(deep.score * 100).toFixed(0)}% against looking once`);
 });
@@ -160,8 +167,9 @@ test('the ladder reports a bot that breaks rather than aborting', () => {
 });
 
 test('a draw counts as half a point', () => {
-  const r = runLadder(getRuleset('tictactoe'), searchAi({ maxMillis: 40 }),
-    searchAi({ maxMillis: 40 }), { games: 4 });
+  const r = runLadder(getRuleset('tictactoe'),
+    searchAi({ maxMillis: 60000, maxNodes: 8000 }),
+    searchAi({ maxMillis: 60000, maxNodes: 8000 }), { games: 4 });
   // Two searching players at tic tac toe should mostly draw, which is
   // an even score rather than a zero.
   assert.ok(r.score > 0.3 && r.score < 0.7,
