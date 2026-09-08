@@ -19,6 +19,9 @@ import { validateRuleset } from './ruleset-api.js';
 import { seedFromString } from './rng.js';
 import { applyTheme, loadTheme, saveTheme, resetTheme, THEME_KEY } from './theme.js';
 import { allAis, getAi, takeTurn, positionHash, seededRandom, DEFAULT_WEIGHTS } from './ai-api.js';
+// Importing this registers the searching bot, which is what puts it in
+// the opponent list beside Greedy.
+import './ai-search.js';
 
 const $ = sel => document.querySelector(sel);
 
@@ -59,8 +62,11 @@ function openPicker() {
   let chosen = games[0];
   let count = Math.max(2, chosen.minPlayers);
   // Second seat defaults to a bot, so a lone visitor has an opponent
-  // without having to work out how to arrange one.
-  const seats = [null, allAis()[0]?.id || null, null, null];
+  // without having to work out how to arrange one. Prefer the searching
+  // one when it is available — it is the better game.
+  const bots = allAis();
+  const preferred = (bots.find(b => b.id === 'search') || bots[0])?.id || null;
+  const seats = [null, preferred, null, null];
 
   const paint = () => {
     // `seatRows` is the markup; `seats` above is who plays each one.

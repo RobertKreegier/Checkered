@@ -107,6 +107,22 @@ Two things to know before changing it:
   `REPLY_CEILING`, and `SAFETY_SHORTLIST` exist because Territory
   reached 26 seconds a turn without them. Raise them and measure.
 
+## The two opponents
+
+`greedyAi` (ai-api.js) looks one move ahead plus a reply check.
+`searchAi` (ai-search.js) does alpha-beta with iterative deepening and
+is much stronger where a turn is a single move.
+
+`searchAi` **delegates Territory to greedy on purpose.** A Territory
+turn is ~100 actions, so one ply of search means enumerating a whole
+turn; measured at 3s/turn and no stronger. Don't "fix" this by raising
+the budget. Making Territory's bot better means a richer `evaluate()`
+or planning at the level of turns, not more depth.
+
+Use `src/ladder.js` to check any change to either bot. Claims about
+strength should come with a score, not an impression — the first greedy
+player lost every game of checkers to random play while looking fine.
+
 ## Not yet built
 
 - `src/net.js` — relay client and the desync comparison UI.

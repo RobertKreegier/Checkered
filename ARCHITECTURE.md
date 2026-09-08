@@ -338,6 +338,46 @@ learns a game's vocabulary. (This came out of a guard test catching
   renderer or the UI learns a game's vocabulary; one of them caught
   `main.js` reading `player.armory`, which is why seats now carry
   neutral `colors.primary` / `colors.accent`. Suite at 174 tests.
+- **2026-09-04 · ai-search.js, ladder.js** — A second opponent,
+  "Thinker", that searches instead of guessing: minimax with alpha-beta
+  pruning, iterative deepening against a time budget, move ordering,
+  a transposition table keyed on `positionHash`, and quiescence search.
+  It uses only the ruleset contract, so it plays any registered game;
+  a guard test enforces that it names none of them.
+
+  `src/ladder.js` came first, deliberately. "Stronger" is easy to feel
+  and easy to get wrong — the original greedy player lost every game of
+  checkers to random while looking fine to the eye. The ladder plays a
+  seeded series with alternating seats and reports a score.
+
+  Measured against Greedy:
+
+  | game        | result           | score |
+  |-------------|------------------|-------|
+  | Checkers    | 9W 0L 0D         | 100%  |
+  | Chess       | 4W 0L 1D         | 90%   |
+  | Tic Tac Toe | 6W 0L 14D        | 65%   |
+  | Hexapawn    | 9W 11L 0D        | 45%   |
+
+  Hexapawn's 45% is not weakness: the game is solved and the *second*
+  player wins with perfect play, so alternating seats caps a perfect
+  player near 50%. It is a poor benchmark and shouldn't be read as one.
+  Tic Tac Toe's draws are likewise correct play, not indecision — the
+  test asserts it never *loses*, which is the meaningful claim.
+
+  **Territory is delegated to Greedy, by design.** Minimax assumes a
+  turn is one move followed by a reply; a Territory turn is a sequence
+  of ~100 actions with ~50 options each, so one ply already means
+  enumerating an entire turn. Measured before the delegation existed:
+  3 seconds a turn and no stronger than greedy. `searchable()` samples a
+  few actions to see whether taking one hands the turn over, and steps
+  aside when it doesn't. Making Territory's bot stronger means a better
+  `evaluate()` or turn-level planning, not more depth.
+
+  Also worth recording: quiescence needed a generic definition of a
+  "noisy" move, since the search may not say what a capture is. It uses
+  the size of the evaluation swing instead, which works for any game.
+  Suite at 302 tests.
 - **2026-09-03 · styles.css, rulesets/territory.js** — Fixed a gap above
   the bottom chip of every Territory stack. The column is laid out
   `column-reverse`, so the *first* child is the bottom chip; zeroing its
