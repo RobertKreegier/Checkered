@@ -552,3 +552,88 @@ test('the rules describe the opening the game actually plays', () => {
   assert.match(text, /before anyone pitches a camp/i,
     'the rules should say the ground is laid first');
 });
+
+/* ---------- the evaluator models the game's economy ---------- */
+
+test('a knight is worth the same as two spread pawns', () => {
+  // From playtesting: a knight yields one move for its square plus one
+  // for the armory it produces, which is exactly what two pawns on two
+  // squares yield. That equivalence is what makes the pawn-versus-knight
+  // choice a real trade, and an evaluator that breaks it is not looking
+  // at the same game the player is.
+  const eng = new Engine(territory, {
+    players: [{ name: 'A' }, { name: 'B' }], config: { scatterStacks: 0 }, seed: 3,
+  });
+  const position = board => ({ ...eng.state, board, cur: 0 });
+
+  const twoPawns = position({ '0,0': { o: 0, u: 1, a: 0 }, '1,0': { o: 0, u: 1, a: 0 } });
+  const oneKnight = position({ '0,0': { o: 0, u: 2, a: 0 } });
+
+  assert.equal(
+    territory.evaluate(twoPawns, 0),
+    territory.evaluate(oneKnight, 0),
+    'the two should be worth the same',
+  );
+});
+
+test('an unsupported pawn is worth less than a supported one', () => {
+  const eng = new Engine(territory, {
+    players: [{ name: 'A' }, { name: 'B' }], config: { scatterStacks: 0 }, seed: 3,
+  });
+  const position = board => ({ ...eng.state, board, cur: 0 });
+
+  const alone = territory.evaluate(position({ '0,0': { o: 0, u: 1, a: 0 } }), 0);
+  const paired = territory.evaluate(
+    position({ '0,0': { o: 0, u: 1, a: 0 }, '1,0': { o: 0, u: 1, a: 0 } }), 0);
+
+  assert.ok(alone < paired, 'a pawn about to be abandoned is nearly lost already');
+});
+
+test('a second camp is worth much more than a seventh', () => {
+  // Camps are insurance, not currency: the first is survival, the second
+  // means a strike doesn't end your game, and past that they are just
+  // large stacks whose production is already counted as income.
+  const eng = new Engine(territory, {
+    players: [{ name: 'A' }, { name: 'B' }], config: { scatterStacks: 0 }, seed: 3,
+  });
+  const camps = n => {
+    const board = {};
+    for (let i = 0; i < n; i++) board[`${i * 2},0`] = { o: 0, u: 4, a: 0 };
+    return territory.evaluate({ ...eng.state, board, cur: 0 }, 0);
+  };
+
+  const firstToSecond = camps(2) - camps(1);
+  const sixthToSeventh = camps(7) - camps(6);
+  assert.ok(firstToSecond > sixthToSeventh,
+    'the insurance value of a camp should be capped, not linear');
+});
+
+test('production is valued over bare ground', () => {
+  // The playtesting finding this evaluator was rebuilt around: position
+  // matters less than production.
+  const eng = new Engine(territory, {
+    players: [{ name: 'A' }, { name: 'B' }], config: { scatterStacks: 0 }, seed: 3,
+  });
+  const position = board => ({ ...eng.state, board, cur: 0 });
+
+  // Four pawns spread over four squares: four moves a turn, no armory.
+  const sprawl = position({
+    '0,0': { o: 0, u: 1, a: 0 }, '1,0': { o: 0, u: 1, a: 0 },
+    '2,0': { o: 0, u: 1, a: 0 }, '3,0': { o: 0, u: 1, a: 0 },
+  });
+  // The same four chips as one camp: one square, but two armory a turn.
+  const camp = position({ '0,0': { o: 0, u: 4, a: 0 } });
+
+  assert.ok(territory.evaluate(camp, 0) > territory.evaluate(sprawl, 0),
+    'four chips in a camp should beat four chips scattered as pawns');
+});
+
+test('banked armory counts toward what a position is worth', () => {
+  // Armory is stored moves, and stored moves are what pay for a strike
+  // on a distant camp. An evaluator that ignores it will never bank any.
+  const eng = new Engine(territory, {
+    players: [{ name: 'A' }, { name: 'B' }], config: { scatterStacks: 0 }, seed: 3,
+  });
+  const position = a => ({ ...eng.state, board: { '0,0': { o: 0, u: 2, a } }, cur: 0 });
+  assert.ok(territory.evaluate(position(3), 0) > territory.evaluate(position(0), 0));
+});

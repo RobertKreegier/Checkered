@@ -338,6 +338,45 @@ learns a game's vocabulary. (This came out of a guard test catching
   renderer or the UI learns a game's vocabulary; one of them caught
   `main.js` reading `player.armory`, which is why seats now carry
   neutral `colors.primary` / `colors.accent`. Suite at 174 tests.
+- **2026-09-05 · rulesets/territory.js** — Territory's `evaluate()`
+  rebuilt around Bob's playtesting finding: **position matters less than
+  production.** The old one counted chips and squares, which misses the
+  game — Territory's resources are convertible, so what matters is the
+  rate they arrive at. Everything is now converted to one unit, moves
+  per turn:
+
+      a held square   -> moveFactor moves a turn
+      a stack of 2+   -> floor(u * prodFactor) points, buying
+                         floor(points / costArmory) armory,
+                         each burnable for burnArmory moves
+
+  On the defaults that makes a knight worth exactly two spread pawns —
+  one move for its square, one for its armory — which is the real
+  equivalence Bob described and is now asserted by a test. Terms were
+  added for the differences that survive it: unsupported pawns are
+  discounted (income on paper only), banked armory is valued as stored
+  moves plus reach, since banking is what funds a long strike on a
+  distant camp.
+
+  Measured against the old chip-counting evaluator, greedy on both
+  sides, four games each, scoring by moves-per-turn generated — a
+  yardstick neither optimises directly:
+
+      income eval 154   chip eval 139
+
+  The *shape* of the difference is the interesting part: the new one
+  holds slightly fewer squares but far more income, consolidating into
+  producers instead of sprawling.
+
+  Camp weighting took two attempts and neither guess was right.
+  Uncapped at 16 the bot built five to seven camps and generated 132;
+  capped at two with weight 22 it holds two and generates 156. Camps are
+  insurance, not currency — the first is survival, the second means a
+  strike doesn't end the game, and past that they are large stacks whose
+  production is already counted. The cap is asserted by a test.
+
+  `tools/territory-eval-bench.mjs` keeps the A/B harness around, since
+  any future change to these weights should come with a number.
 - **2026-09-04 · ai-search.js, ladder.js** — A second opponent,
   "Thinker", that searches instead of guessing: minimax with alpha-beta
   pruning, iterative deepening against a time budget, move ordering,

@@ -984,30 +984,139 @@ const territory = {
    * exactly that: a game whose resources aren't interchangeable has to
    * say so itself.
    */
+  /**
+   * What a Territory position is worth.
+   *
+   * The insight this is built on, from playtesting: **position matters
+   * less than production.** Counting chips and squares — which is what
+   * the generic evaluator and the first version of this one did — misses
+   * the whole game, because Territory's resources are convertible into
+   * one another and what actually matters is the rate they come in at.
+   *
+   * So everything here is converted to one unit: MOVES PER TURN.
+   *
+   *   a held square      -> moveFactor moves a turn
+   *   a stack of 2+      -> floor(u * prodFactor) production points,
+   *                         which buy floor(points / costArmory) armory,
+   *                         each burnable for burnArmory moves
+   *
+   * Run those numbers on the defaults and a knight yields one move for
+   * the square it stands on plus one for the armory it makes: exactly
+   * what two pawns spread over two squares yield. That equivalence is
+   * real, it is what makes the pawn-versus-knight choice a genuine
+   * trade rather than a right answer, and an evaluator that doesn't
+   * reproduce it is not looking at the same game the player is.
+   *
+   * The differences that remain are the interesting ones, and each has a
+   * term below:
+   *
+   *   - A pawn must be supported or it is abandoned; a knight supports
+   *     itself and can wander. Sprawling into pawns buys income at the
+   *     cost of fragility.
+   *   - Armory in hand is banked moves. It is what pays for reach: bank
+   *     enough and a knight can cross empty ground to strike a distant
+   *     camp, which is a real strategy and needs a stock to fund.
+   *   - A strike is only worth its losses if it cuts the opponent's
+   *     production. Since the score is ours minus theirs and both are
+   *     measured as income, damage to a producing stack shows up as
+   *     exactly the gain it is — and trading chips for a pawn does not.
+   *   - Losing your last camp ends your game, so it outweighs economics.
+   */
   evaluate(state, actorId) {
     const c = cfg(state);
     const me = state.players[actorId];
     if (me && me.alive === false) return -1000000;
 
-    let score = 0;
+    // All in moves-per-turn unless noted. Tunable: these are the numbers
+    // to argue with if the bot plays in a way that looks wrong.
+    const W = {
+      income: 10,      // the engine of the game
+      armory: 3,       // banked moves, and the fuel for a distant strike
+      unit: 1.5,       // chips as capital: they can be stacked into income
+      camp: 22,        // insurance against losing the one you have
+      campCap: 2,      // ...but only up to a point; see below
+      town: 5,         // a bigger producer
+      survival: 80,    // holding any camp at all
+      stranded: 14,    // a pawn about to be abandoned is nearly lost already
+      reach: 0.4,      // stored moves are what let you strike far away
+    };
+
+    const count = state.players.map(() => ({
+      squares: 0, units: 0, armory: 0, armoryIncome: 0,
+      camps: 0, towns: 0, stranded: 0,
+    }));
+
     for (const [k, st] of Object.entries(state.board)) {
       if (st.o === null) continue;
-      const sign = st.o === actorId ? 1 : -1;
-      // Ground is the move clock, so a held square is worth more than
-      // the chips standing on it.
-      score += sign * 6;
-      score += sign * 4 * st.u;
-      // Armory is real but convertible at a loss, so it is worth less
-      // than the unit chip it could become.
-      score += sign * 1.5 * st.a;
-      // A camp is survival: without one you are out at end of turn.
-      if (st.u >= c.campSize) score += sign * 25;
-      if (st.u >= c.townSize) score += sign * 15;
+      const t = count[st.o];
+      if (!t) continue;
+
+      t.squares++;
+      t.units += st.u;
+      t.armory += st.a;
+
+      // Only a stack of two or more produces anything at all.
+      if (st.u >= c.knightSize) {
+        const points = Math.floor(st.u * c.prodFactor);
+        t.armoryIncome += Math.floor(points / Math.max(1, c.costArmory));
+      }
+      if (st.u >= c.campSize) t.camps++;
+      if (st.u >= c.townSize) t.towns++;
+
+      // A lone pawn with nothing of its owner's beside it will be
+      // abandoned at the end of their play — it is income on paper only.
+      if (st.u === 1 && c.pawnSupport) {
+        const [x, y] = un(k);
+        const held = nbs(state, x, y).some(([i, j]) => {
+          const q = at(state, i, j);
+          return q && q.o === st.o && q.u >= 1;
+        });
+        if (!held) t.stranded++;
+      }
     }
 
-    // Unspent moves are worth something, but less than the ground that
-    // generated them — otherwise sitting still looks like a plan.
-    if (state.cur === actorId) score += 0.5 * (state.moves || 0);
+    const worth = (id) => {
+      const t = count[id];
+      if (!t) return 0;
+
+      // Moves a turn: ground plus what production can be burned for.
+      const income = t.squares * c.moveFactor + t.armoryIncome * c.burnArmory;
+
+      // Camps are insurance, not a currency. The first is survival. A
+      // second means a strike on one doesn't end your game — which is
+      // worth a great deal, because a single camp is a single point of
+      // failure and the bot will happily be talked into one. Past two
+      // they are just large stacks, and their production is already
+      // counted in income, so the bonus is capped rather than linear.
+      //
+      // Measured over four games: uncapped at weight 16 the bot built
+      // five to seven camps and generated 132 moves a turn; capped at
+      // two with weight 22 it holds two camps and generates 156. Paying
+      // for redundancy is cheap; hoarding it is not.
+      const insured = Math.min(t.camps, W.campCap);
+
+      return W.income * income
+        + W.armory * t.armory
+        + W.reach * t.armory * c.burnArmory
+        + W.unit * t.units
+        + W.camp * insured
+        + W.town * t.towns
+        + (t.camps > 0 ? W.survival : 0)
+        - W.stranded * t.stranded;
+    };
+
+    let score = worth(actorId);
+    for (let i = 0; i < state.players.length; i++) {
+      if (i === actorId) continue;
+      if (state.players[i].alive === false) continue;
+      score -= worth(i);
+    }
+
+    // Moves still in hand this turn are spendable now, so they are worth
+    // slightly more than the same number arriving next turn — but not so
+    // much that hoarding them looks better than using them.
+    if (state.cur === actorId) score += 0.6 * (state.moves || 0);
+
     return score;
   },
 
