@@ -511,3 +511,44 @@ test('the same seed lays the same ground', () => {
   }).fingerprint();
   assert.equal(make(), make(), 'scattering at creation must stay deterministic');
 });
+
+/* ---------- the rules text has to match the game ---------- */
+
+test('the costs quoted in the rules are the costs the game charges', () => {
+  // Rules ship beside the code so the two can't drift. Numbers are the
+  // easiest thing to get wrong and the cheapest to check.
+  const text = territory.rulesText;
+  const c = territory.config;
+
+  assert.ok(text.includes(`armory chip \u2014 \`${c.costArmory}\` points`),
+    `the rules should charge ${c.costArmory} points for an armory chip`);
+  assert.ok(text.includes(`pawn \u2014 \`${c.costPawn}\` points`),
+    `the rules should charge ${c.costPawn} points for a pawn`);
+  assert.ok(text.includes(`knight \u2014 \`${c.costKnight}\` points`),
+    `the rules should charge ${c.costKnight} points for a knight`);
+  assert.ok(text.includes(`${c.meltCost} armory`),
+    'the melt rate in the rules should match meltCost');
+  assert.ok(text.includes('one chip per two moves') && c.spillCost === 2,
+    'the spill rate in the rules should match spillCost');
+});
+
+test('the rules describe the stack tiers the game actually uses', () => {
+  const text = territory.rulesText;
+  const c = territory.config;
+  assert.ok(text.includes(`\`${c.knightSize}\u20133\``) || text.includes(`\`${c.knightSize}-3\``),
+    'the knight range should start at knightSize');
+  assert.ok(text.includes(`\`${c.campSize}\u20137\``) || text.includes(`\`${c.campSize}-7\``),
+    'the camp range should start at campSize');
+  assert.ok(text.includes(`\`${c.townSize}+\``),
+    'the town threshold should match townSize');
+});
+
+test('the rules describe the opening the game actually plays', () => {
+  // The scatter moved ahead of placement on 2026-09-02; the text said
+  // neutrals sat "out beyond everyone's camp" for a day afterwards.
+  const text = territory.rulesText;
+  assert.doesNotMatch(text, /out beyond everyone/i,
+    'the neutrals are no longer placed relative to the camps');
+  assert.match(text, /before anyone pitches a camp/i,
+    'the rules should say the ground is laid first');
+});

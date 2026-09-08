@@ -338,6 +338,29 @@ learns a game's vocabulary. (This came out of a guard test catching
   renderer or the UI learns a game's vocabulary; one of them caught
   `main.js` reading `player.armory`, which is why seats now carry
   neutral `colors.primary` / `colors.accent`. Suite at 174 tests.
+- **2026-09-03 · styles.css, rulesets/territory.js** — Fixed a gap above
+  the bottom chip of every Territory stack. The column is laid out
+  `column-reverse`, so the *first* child is the bottom chip; zeroing its
+  `margin-top` released the overlap between it and the chip above rather
+  than at the top of the column. The pull now hangs off the bottom edge
+  and is released on the first chip. Measured: uniform -4.1px overlap
+  throughout a four-stack, with the elision break still appearing past
+  the seven-chip cap.
+
+  Territory's rules text replaced with Bob's rewrite, which explains the
+  stack tiers in terms of what they are made of rather than just listing
+  them. The neutral-stack paragraph was then reworded to match the
+  opening the game actually plays: the ground is scattered before anyone
+  pitches a camp, and a camp may stand beside a neutral even though
+  camps must stand clear of each other. Four typos fixed.
+
+  Three tests now guard the text against drifting from the code: the
+  production costs, melt rate, and spill rate quoted in the rules are
+  checked against `config`, the stack tiers against `knightSize` /
+  `campSize` / `townSize`, and the opening description against the
+  behaviour it describes. The drift that prompted these lasted a day
+  and nothing caught it — rules shipping beside the code only helps if
+  something checks they still agree.
 - **2026-09-03 · rulesets/tictactoe.js, rulesets/hexapawn.js** — Two
   worked examples, written to be read rather than to be impressive.
   Territory, Checkers, and Chess are real games and none of them is a

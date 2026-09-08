@@ -595,14 +595,31 @@ function doMove(s, a, rng, log) {
 const rulesText = `
 ## Stacks
 
-Every square holds one stack. The number of **unit chips** names it;
-**armory chips** ride on top as its ammunition and shield.
+Every square can hold a stack of two kinds of chips: "unit" chips, and "armory"
+chips. The number of **units** in a stack determines what type of stack it is;
+**armory chips** ride on top of the units as its ammunition, its shield, and a
+general store of energy. The following is a list of unit stacks and their
+names:
 
 - \`1\` **pawn** — holds ground, produces nothing, and must touch another of
-  your stacks at the end of your play or it is abandoned.
-- \`2–3\` **knight** — self-supporting, produces armory.
-- \`4–7\` **camp** — self-supporting, produces pawns or armory.
-- \`8+\` **town** — produces knights, pawns, or armory.
+  your stacks at the end of your play or it is abandoned. A pawn stakes out
+  territory. The more squares of territory you have, the more turns you can
+  take in the move step. Stacked up, two pawns make a knight.
+- \`2–3\` **knight** — self-supporting, produces armory. A knight is 2 pawns in
+  the same stack, making them self-supporting. In other words, a knight doesn't
+  need to touch another stack at the end of play, so they can wander the board
+  independently. Generally speaking, every 2 units in a stack produces 1 armory
+  during the production step, so a knight naturally produces 1 armory. Stacked
+  up, 2 knights make a camp.
+- \`4–7\` **camp** — self-supporting, produces pawns or armory. A camp, being
+  4 units high, can be said to be either 4 pawns, or 2 knights...or a knight
+  and 2 pawns, etc. As such, it produces armory equal to the total number of
+  knights in the stack. Additionally, and again generally speaking, 2 armory
+  can be melted into a unit chip, so a camp with 4 pawns (or 2 knights) can
+  also produce a single unit chip...a pawn. Two camps stacked up make a town.
+- \`8+\` **town** — produces knights, pawns, or armory. Following the same
+  rules above, a town is essentially 2 camps put together, and can produce the
+  same units or armory as two camps can.
 
 ## 1 · Production step
 
@@ -618,10 +635,10 @@ four armory, two pawns, one knight, or any mix its chips allow.
 
 ## 2 · Move step
 
-You get one move per square you occupy at the start of the step — your ground
-is your clock. One move shifts one chip to one adjacent square, and that counts
-armory chips too: a knight carrying one armory is three chips, so walking the
-whole thing one square costs three moves.
+You get one move per square you occupy at the start of the step. One move
+shifts one chip to one adjacent square, and that counts armory chips too: a
+knight carrying one armory is three chips, so walking the whole thing one
+square costs three moves.
 
 Armory rides only where units go. Sent on its own it is either passed to
 another of your stacks or thrown at an enemy. A group carrying armory can't
@@ -649,10 +666,13 @@ either. When a stack loses its last unit chip — walked away, or killed — its
 armory stays on the square as **loose armory**, owned by nobody and unable to
 move. Any player who walks a unit chip onto that square picks the whole pile up.
 
-The opening board is scattered with **neutral stacks**, out beyond everyone's
-camp. A neutral stack doesn't move, produce, or fight. Finish a play with one of
-your stacks beside it and it joins you — so it's a race. You can also simply
-march onto one and absorb it.
+The board is scattered with **neutral stacks** before anyone pitches a camp, so
+you can see what is out there and choose your ground with it in mind. A neutral
+stack doesn't move, produce, or fight. Finish a play with one of your stacks
+beside it and it joins you — so it's a race, and whoever arrives last gets
+nothing. You can also simply march onto one and absorb it. Camps must stand
+clear of one another, but nothing stops you pitching one right beside a neutral
+stack — and the good ground tends to be spoken for early.
 
 ## Where a lone chip may step
 

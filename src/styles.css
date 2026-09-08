@@ -157,7 +157,12 @@ body {
   height: 12.5%;
   min-height: 3px;
   flex: 0 0 auto;
-  margin-top: -4.5%;                /* overlap, so they read as a stack */
+  /* Chips overlap so the column reads as a solid stack. The column is
+   * laid out column-reverse, so the FIRST child is the bottom chip:
+   * the pull has to hang off the bottom edge and be released on that
+   * first chip, not the last. Zeroing margin-top here instead opened a
+   * gap above the bottom chip on every stack. */
+  margin-bottom: -4.5%;
   border-radius: 50% / 34%;
   background:
     linear-gradient(180deg,
@@ -168,7 +173,7 @@ body {
     0 1px 0 rgba(0, 0, 0, .45),
     inset 0 0 0 1px rgba(0, 0, 0, .30);
 }
-.chip:first-child { margin-top: 0; }
+.chip:first-child { margin-bottom: 0; }   /* the one actually resting on the square */
 
 /* Armory rides on top and is drawn smaller, so the two substances stay
  * legible without needing to read the numbers. */
@@ -180,7 +185,7 @@ body {
 
 /* Where the column was cut. The gap says "there are more of these than
  * are drawn"; the exact figure is on the counter tag below. */
-.chip.elided { margin-top: 12%; }
+.chip.elided { margin-top: 11%; }
 .chip.elided::after {
   content: "";
   position: relative; display: block;
