@@ -127,9 +127,23 @@ export class Engine {
     this.state.rngState = rng.state;
     this.state.actionCount = (this.state.actionCount || 0) + 1;
 
-    for (const e of entries) {
-      this.log.push(typeof e === 'string' ? { text: e, actorId } : { actorId, ...e });
-    }
+    // `at` is the history index of the action that produced this line.
+    // One action can write several lines — a Territory turn writes a
+    // handful — so a line's position in the log is NOT its position in
+    // the history, and anything rewinding by log index rewinds to the
+    // wrong place. Record the link rather than inferring it.
+    const at = this.history.length;
+    entries.forEach((e, i) => {
+      // `lead` marks the first line an action wrote — the one that
+      // describes the action itself. Later lines describe consequences
+      // of it (a turn passing, a pawn defecting), and there is no state
+      // between them to rewind to, so they rewind to just AFTER the
+      // action instead of before it. Without the distinction, clicking
+      // "so-and-so's play begins" undoes the move that ended the
+      // previous play, which is not what anyone means by it.
+      const line = typeof e === 'string' ? { text: e } : { ...e };
+      this.log.push({ actorId, at, lead: i === 0, ...line });
+    });
 
     this.history.push({ action, actorId, before, hashAfter: this.fingerprint(), logFrom });
     if (this.history.length > this.maxUndo) this.history.shift();

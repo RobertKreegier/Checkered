@@ -44,7 +44,72 @@ body {
 
 /* ---------- board ---------- */
 
-#boardwrap { position: relative; background: var(--felt); overflow: hidden; }
+#boardwrap {
+  position: relative;
+  background: var(--felt);
+  overflow: hidden;
+  transition: background .35s ease;
+}
+
+/* ---------- which step you are in ----------
+ *
+ * The ground changes colour with the step. main.js puts the ruleset's
+ * own word for the phase on the board as data-phase and knows nothing
+ * more about it; every rule below is a stylesheet's opinion, so a
+ * player's own CSS can restyle or replace it.
+ *
+ * Playtesting found people producing, then clicking again expecting to
+ * produce and moving a piece instead, because the step had changed
+ * quietly. Three things now mark it: the felt, an edge glow, and a
+ * banner that announces the change where the eyes already are.
+ */
+#boardwrap[data-phase="production"] {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(226, 87, 76, .07), transparent 70%),
+    var(--felt);
+  box-shadow: inset 0 0 0 2px rgba(226, 87, 76, .22);
+}
+#boardwrap[data-phase="move"] {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(200, 162, 74, .09), transparent 70%),
+    var(--felt);
+  box-shadow: inset 0 0 0 2px rgba(200, 162, 74, .26);
+}
+#boardwrap[data-phase="place"] {
+  box-shadow: inset 0 0 0 2px rgba(231, 237, 233, .14);
+}
+
+#phase-banner {
+  position: absolute;
+  top: 22px; left: 50%;
+  transform: translate(-50%, -12px);
+  z-index: 6;
+  pointer-events: none;
+  opacity: 0;
+  padding: 10px 26px;
+  border: 1px solid var(--line);
+  background: rgba(8, 12, 11, .93);
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: 30px;
+  line-height: 1;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  transition: opacity .22s ease, transform .22s ease;
+}
+#phase-banner.show { opacity: 1; transform: translate(-50%, 0); }
+#phase-banner[data-phase="production"] { color: #E2574C; border-color: rgba(226, 87, 76, .5); }
+#phase-banner[data-phase="move"] { color: var(--brass); border-color: rgba(200, 162, 74, .5); }
+#phase-banner::after {
+  content: " step";
+  font-size: .5em;
+  color: var(--mute);
+  letter-spacing: .18em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #boardwrap, #phase-banner { transition: none; }
+}
 
 /* Dragging to pan would otherwise sweep a text selection across every
  * counter and label it crosses, since those are real text nodes. The
@@ -257,8 +322,8 @@ body {
 .pfoot { padding: 12px 18px; border-top: 1px solid var(--line); display: flex; gap: 6px; flex-wrap: wrap; }
 /* The icon buttons are a row of single glyphs, so they should take only
    the room they need and leave the primary action its width. */
-.pfoot button:not(.primary) { padding: 9px 7px; min-width: 0; flex: 0 0 auto; }
-.pfoot button.primary { min-width: 96px; }
+.pfoot button:not(.primary) { padding: 9px 6px; min-width: 0; flex: 0 0 auto; font-size: 10px; }
+.pfoot button.primary { min-width: 78px; flex: 1 1 auto; }
 
 .eyebrow {
   font-family: var(--mono); font-size: 10px; letter-spacing: .18em;
@@ -268,7 +333,26 @@ body {
 .turnline { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
 .turnchip { width: 26px; height: 26px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .25); flex: 0 0 auto; }
 .turnname { font-family: var(--display); font-weight: 700; font-size: 26px; line-height: 1; text-transform: uppercase; }
-.turnphase { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--mute); }
+.turnphase {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+/* The step is the thing people were missing, so it gets a chip of its
+   own rather than being one grey word among several. */
+.phasechip {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 2px;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--mute);
+}
+.phasechip[data-phase="production"] { background: #E2574C; }
+.phasechip[data-phase="move"] { background: var(--brass); }
+.phasechip[data-phase="place"] { background: var(--chalk); }
 
 .card { border: 1px solid var(--line); background: var(--felt-2); padding: 10px; margin-bottom: 14px; }
 .rowlab { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--mute); }

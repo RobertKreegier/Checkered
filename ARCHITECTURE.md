@@ -338,6 +338,36 @@ learns a game's vocabulary. (This came out of a guard test catching
   renderer or the UI learns a game's vocabulary; one of them caught
   `main.js` reading `player.armory`, which is why seats now carry
   neutral `colors.primary` / `colors.accent`. Suite at 174 tests.
+- **2026-09-09 · engine.js, main.js, styles.css, territory.js** — Two
+  playtesting complaints, one of them a real bug.
+
+  **The record rewound to the wrong place.** `undoTo()` takes a
+  *history* index and the panel was passing a *log* index. Those are the
+  same number only when every action writes exactly one line, which is
+  true of chess and false of Territory — a single action there writes a
+  handful. Log entries now carry `at`, the index of the action that
+  wrote them.
+
+  That alone wasn't enough. A line describing a *consequence* — "so and
+  so's play begins", written as the tail of the action that ended the
+  previous play — would rewind to before that action and throw away the
+  move that caused it. Lines are now marked `lead` (the first line an
+  action writes, describing the action itself, rewinding to before it)
+  or not (a consequence, rewinding to just after, since there is no
+  moment in between). Territory's opening note moved to the end of its
+  first action's lines so it stops stealing the lead slot.
+
+  **The step change was invisible.** People produced, clicked again
+  expecting to produce, and moved a piece instead. Three marks now:
+  the felt is tinted by step, a banner announces the change where the
+  eyes already are, and the panel carries a coloured chip instead of one
+  grey word among several.
+
+  This stayed generic. `main.js` passes the ruleset's own word for the
+  phase to the board as `data-phase` and knows nothing more about it;
+  every colour is a stylesheet opinion, overridable by a player's own
+  CSS, and a ruleset with no phases leaves the attribute off. Suite at
+  373 tests.
 - **2026-09-08 · project-wide** — Everything the website serves moved
   into `/root`: `index.html`, `src/`, and `rulesets/`. `test/` and
   `tools/` stay at the repo root, so the published site carries only

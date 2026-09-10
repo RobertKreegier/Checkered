@@ -876,11 +876,12 @@ const territory = {
     const c = cfg(s);
 
     // The opening scatter happens before any action, so its note waits
-    // here for the first one to carry it into the record.
-    if (s.openingNote) {
-      log.push(s.openingNote);
-      s.openingNote = null;
-    }
+    // here for the first one to carry it into the record. It is added
+    // AFTER the action's own line rather than before: the first line an
+    // action writes is the one the record lets you rewind to, and that
+    // should be the move itself, not the scene-setting.
+    const note = s.openingNote;
+    s.openingNote = null;
 
     switch (a.type) {
       case 'place': {
@@ -929,6 +930,7 @@ const territory = {
       default:
         throw new Error('Unknown action type: ' + a.type);
     }
+    if (note) log.push(note);
     return log;
   },
 

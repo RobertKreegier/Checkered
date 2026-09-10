@@ -240,6 +240,7 @@ function startGame(entry, players, seats = []) {
   UI.seats = players.map((_, i) => seats[i] || null);
   UI.thinking = false;
   UI.aiSeen = null;
+  UI.lastPhase = undefined;
   // Seeded, so a game against a bot replays like any other.
   UI.aiRandom = seededRandom(UI.engine.seed ^ 0x5f3759df);
 
@@ -301,6 +302,7 @@ function adoptSave(save) {
   UI.lastMove = null;
   UI.thinking = false;
   UI.pendingCodes = [];
+  UI.lastPhase = undefined;
 
   engine.onChange(() => { touchAutosave(); refresh(); });
   UI.board.attach(engine);
@@ -318,7 +320,8 @@ function adoptMatch(match, entry) {
   clearAiTimer();
   UI.match = match;
   UI.entry = entry;
-  UI.online = true;              // rules are pinned for the match
+  UI.online = true;
+  UI.lastPhase = undefined;              // rules are pinned for the match
   UI.seats = [];                 // no bots in a match
   UI.thinking = false;
   UI.engine = match.engine;
@@ -636,7 +639,18 @@ function refresh() {
     }
   }
 
-  if (UI.board.mount) UI.board.mount.classList.toggle('waiting', !!UI.thinking);
+  if (UI.board.mount) {
+    UI.board.mount.classList.toggle('waiting', !!UI.thinking);
+    // The phase, as the ruleset names it, put on the board as data so a
+    // stylesheet can colour the ground by it. main.js stays ignorant of
+    // what any particular phase means — it just passes the word through.
+    const rs = UI.engine.ruleset;
+    const phase = typeof rs.summarize === 'function'
+      ? (rs.summarize(UI.engine.state) || {}).phase : null;
+    if (phase) UI.board.mount.dataset.phase = String(phase);
+    else delete UI.board.mount.dataset.phase;
+    announcePhase(phase);
+  }
   UI.board.setHighlights(marks);
   UI.board.setSelected(UI.selected);
   UI.board.draw();
@@ -644,6 +658,33 @@ function refresh() {
 }
 
 const key = c => c.x + ',' + c.y;
+
+/**
+ * Say out loud when the step changes.
+ *
+ * Playtesting found people producing, then clicking to produce again and
+ * moving a stack instead, because the step had quietly changed under
+ * them. A tint alone was not enough — the change happens while they are
+ * looking at the board, so it has to announce itself where they are
+ * looking.
+ */
+function announcePhase(phase) {
+  if (!phase || phase === UI.lastPhase) return;
+  const first = UI.lastPhase === undefined;
+  UI.lastPhase = phase;
+  if (first) return;              // don't announce the game starting
+
+  const el = document.getElementById('phase-banner');
+  if (!el) return;
+  el.textContent = phase;
+  el.dataset.phase = phase;
+  el.classList.remove('show');
+  // Restart the animation even if the same class is reapplied.
+  void el.offsetWidth;
+  el.classList.add('show');
+  clearTimeout(announcePhase.timer);
+  announcePhase.timer = setTimeout(() => el.classList.remove('show'), 1500);
+}
 
 function renderPanel(actions) {
   const eng = UI.engine;
@@ -667,8 +708,9 @@ function renderPanel(actions) {
       <span class="turnchip" style="background:${tint};box-shadow:0 0 12px ${tint}"></span>
       <div>
         <div class="turnname">${actor.name}</div>
-        <div class="turnphase">${[summary.phase, summary.turnNo ? 'turn ' + summary.turnNo : '']
-      .filter(Boolean).join(' · ')}</div>
+        <div class="turnphase">${summary.phase
+      ? `<span class="phasechip" data-phase="${summary.phase}">${summary.phase}</span>` : ''}${
+      summary.turnNo ? ' · turn ' + summary.turnNo : ''}</div>
       </div>
     </div>`;
     if (actor.status) h += `<div class="kv"><span>${actor.status}</span></div>`;
@@ -728,10 +770,17 @@ function renderPanel(actions) {
   h += `<div class="eyebrow" style="margin-top:18px">Record <span style="color:var(--mute)">click to rewind</span></div><div id="log">`;
   const lines = eng.log.slice(-60).reverse();
   h += lines.length
-    ? lines.map((e, i) => {
-      const idx = eng.log.length - 1 - i;
-      // Same reason: a rewind in a match is not ours alone to make.
-      return UI.match
+    ? lines.map(e => {
+      // Rewind by the ACTION that wrote this line, not by the line's
+      // position in the log — one action can write several lines. A
+      // line describing the action rewinds to before it; a line
+      // describing a consequence rewinds to just after it, since there
+      // is no moment in between.
+      const idx = e.lead ? e.at : e.at + 1;
+      // A rewind in a match is not ours alone to make.
+      // Nothing to undo if the target is the end of the history.
+      const dead = idx === undefined || idx >= eng.history.length;
+      return (UI.match || dead)
         ? `<div>${e.text}</div>`
         : `<div class="undoable" data-undo="${idx}">${e.text}<span class="rew">↶</span></div>`;
     }).join('')

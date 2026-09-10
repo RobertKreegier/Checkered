@@ -485,3 +485,53 @@ test('a restored game lands on the same position', async () => {
   const { engine } = restore(snapshot(UI.engine, { entry: UI.entry }));
   assert.equal(engine.fingerprint(), before);
 });
+
+/* ---------- knowing which step you are in ---------- */
+
+test('the board is told which step the game is in', async () => {
+  // Playtesting found people producing, then clicking again expecting to
+  // produce and moving a piece instead, because the step had changed
+  // quietly. main.js passes the ruleset's own word for the phase to the
+  // board as data; the stylesheet colours the ground by it.
+  const { main, UI } = await mountUI('territory');
+  main.refresh();
+
+  const phase = UI.board.mount.dataset.phase;
+  assert.ok(phase, 'the board should carry the current phase');
+  assert.equal(phase, UI.engine.ruleset.summarize(UI.engine.state).phase,
+    'and it should be the phase the ruleset reports');
+});
+
+test('the phase on the board follows the game', async () => {
+  const { main, UI } = await mountUI('territory');
+  main.refresh();
+  const before = UI.board.mount.dataset.phase;
+
+  // Produce until the step ends, then check the board noticed.
+  for (let i = 0; i < 60; i++) {
+    const done = main.currentActions().find(a => a.action.type === 'endProduction');
+    if (done) { UI.engine.applyAction(done.action, done.actor); break; }
+    const any = main.currentActions()[0];
+    if (!any) break;
+    UI.engine.applyAction(any.action, any.actor);
+  }
+  main.refresh();
+  assert.notEqual(UI.board.mount.dataset.phase, before,
+    'the board should show the step changing');
+});
+
+test('a game with no phases leaves the board unmarked', async () => {
+  // Not every ruleset has steps; the board must not invent one.
+  const { main, UI } = await mountUI('chess');
+  main.refresh();
+  const phase = UI.board.mount.dataset.phase;
+  const reported = UI.engine.ruleset.summarize(UI.engine.state).phase;
+  assert.equal(phase, reported ? String(reported) : undefined);
+});
+
+test('index.html carries somewhere to announce the step', async () => {
+  const fs = await import('node:fs');
+  const html = await fs.promises.readFile(new URL('../root/index.html', import.meta.url), 'utf8');
+  assert.match(html, /id="phase-banner"/);
+  assert.match(html, /aria-live/, 'the announcement should reach a screen reader too');
+});
