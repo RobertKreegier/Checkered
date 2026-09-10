@@ -535,3 +535,41 @@ test('index.html carries somewhere to announce the step', async () => {
   assert.match(html, /id="phase-banner"/);
   assert.match(html, /aria-live/, 'the announcement should reach a screen reader too');
 });
+
+test('changing step clears whatever was selected', async () => {
+  // The selection surviving into the next step is how people ended up
+  // producing with one click and moving with the next: the stack they
+  // had in hand was still in hand when the rules had changed under it.
+  const { main, UI } = await mountUI('territory');
+  main.refresh();
+
+  // Grab something during the production step.
+  const producer = main.currentActions().find(a => a.from);
+  assert.ok(producer, 'production should offer something to select');
+  main.onCellClick(producer.from, { inspect: true });
+  assert.ok(UI.selected, 'a stack is selected');
+  const phaseBefore = UI.engine.ruleset.summarize(UI.engine.state).phase;
+
+  // End the step.
+  const done = main.currentActions().find(a => a.action.type === 'endProduction');
+  assert.ok(done, 'there should be a way to end production');
+  UI.engine.applyAction(done.action, done.actor);
+  main.refresh();
+
+  assert.notEqual(UI.engine.ruleset.summarize(UI.engine.state).phase, phaseBefore);
+  assert.equal(UI.selected, null, 'the new step should start with nothing in hand');
+  assert.equal(UI.pendingTargets, null);
+});
+
+test('a selection survives within a step', async () => {
+  // Clearing on every refresh would make the board unusable; only a
+  // change of step should drop what you are holding.
+  const { main, UI } = await mountUI('chess');
+  main.refresh();
+  const step = main.currentActions().find(a => a.from);
+  main.onCellClick(step.from, { inspect: true });
+  const held = UI.selected;
+  main.refresh();
+  main.refresh();
+  assert.deepEqual(UI.selected, held, 'redrawing must not drop the selection');
+});

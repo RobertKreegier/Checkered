@@ -616,6 +616,7 @@ function commit(entry) {
 
 function refresh() {
   if (!UI.engine) return;
+  notePhaseChange();
   const actions = currentActions();
 
   const marks = new Map();
@@ -649,7 +650,6 @@ function refresh() {
       ? (rs.summarize(UI.engine.state) || {}).phase : null;
     if (phase) UI.board.mount.dataset.phase = String(phase);
     else delete UI.board.mount.dataset.phase;
-    announcePhase(phase);
   }
   UI.board.setHighlights(marks);
   UI.board.setSelected(UI.selected);
@@ -659,21 +659,41 @@ function refresh() {
 
 const key = c => c.x + ',' + c.y;
 
+/** The ruleset's own word for where the game is, or null. */
+function currentPhase() {
+  const rs = UI.engine?.ruleset;
+  if (!rs || typeof rs.summarize !== 'function') return null;
+  return (rs.summarize(UI.engine.state) || {}).phase || null;
+}
+
 /**
- * Say out loud when the step changes.
+ * Notice a step change, and clear the board when one happens.
  *
  * Playtesting found people producing, then clicking to produce again and
  * moving a stack instead, because the step had quietly changed under
- * them. A tint alone was not enough — the change happens while they are
- * looking at the board, so it has to announce itself where they are
- * looking.
+ * them. Dropping the selection is the strongest signal available and it
+ * heads off the misclick directly: whatever they had in hand is no
+ * longer in hand, so the next click starts something rather than
+ * finishing something they had forgotten about.
+ *
+ * Called at the top of refresh(), before the highlights are worked out,
+ * so the cleared selection is what gets drawn rather than the old one.
  */
-function announcePhase(phase) {
+function notePhaseChange() {
+  const phase = currentPhase();
   if (!phase || phase === UI.lastPhase) return;
+
   const first = UI.lastPhase === undefined;
   UI.lastPhase = phase;
-  if (first) return;              // don't announce the game starting
+  if (first) return;              // the game starting is not a change
 
+  UI.selected = null;
+  UI.pendingTargets = null;
+  announcePhase(phase);
+}
+
+/** Announce the new step where the eyes already are: on the board. */
+function announcePhase(phase) {
   const el = document.getElementById('phase-banner');
   if (!el) return;
   el.textContent = phase;

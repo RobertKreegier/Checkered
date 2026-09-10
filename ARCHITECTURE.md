@@ -366,8 +366,18 @@ learns a game's vocabulary. (This came out of a guard test catching
   This stayed generic. `main.js` passes the ruleset's own word for the
   phase to the board as `data-phase` and knows nothing more about it;
   every colour is a stylesheet opinion, overridable by a player's own
-  CSS, and a ruleset with no phases leaves the attribute off. Suite at
-  373 tests.
+  CSS, and a ruleset with no phases leaves the attribute off.
+
+  Follow-up the same day: **a step change now clears the selection.**
+  The stack held at the end of production was staying in hand into the
+  move step, which is precisely how the misclick happened — the next
+  click finished something the player had forgotten they started. This
+  is a stronger signal than any amount of tint, and it heads the
+  mistake off rather than only warning about it. The check moved to the
+  top of `refresh()` so the cleared selection is what gets drawn, not
+  the old one; a test guards that a plain redraw does *not* drop a
+  selection, since clearing on every refresh would make the board
+  unusable. Suite at 375 tests.
 - **2026-09-08 · project-wide** — Everything the website serves moved
   into `/root`: `index.html`, `src/`, and `rulesets/`. `test/` and
   `tools/` stay at the repo root, so the published site carries only
