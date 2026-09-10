@@ -66,21 +66,37 @@ implementation to satisfy an assertion you haven't verified.
 ## Layout
 
 ```
-index.html            shell: loads modules, mounts board + panel
-/src
-  engine.js           turn order, undo, serialize, cross-validation
-  ruleset-api.js      the contract, and validateRuleset()
-  board.js            virtualized DOM renderer, pooling, pan/zoom
-  main.js             generic interaction loop, panel, modals
-  theme.js            per-player CSS, localStorage only
-  styles.css          the default look; every rule overridable
-  rng.js hash.js      seeded randomness; canonical hashing
-/rulesets
-  index.js            THE REGISTRY
-  territory.js checkers.js chess.js
-/test                 conformance.test.js runs the same battery on every
-                      registered ruleset — that one is the centerpiece
+/root                 EVERYTHING THE WEBSITE SERVES. Netlify's publish
+                      directory is this folder, not the repo root.
+  index.html          shell: loads modules, mounts board + panel
+  /src
+    engine.js         turn order, undo, serialize, cross-validation
+    ruleset-api.js    the contract, and validateRuleset()
+    board.js          virtualized DOM renderer, pooling, pan/zoom
+    main.js           generic interaction loop, panel, modals
+    ai-api.js         AI contract + the greedy opponent
+    ai-search.js      alpha-beta opponent
+    match.js          two machines playing one game, over any transport
+    saves.js          autosave, named slots, export/import
+    codec.js          base64url shared by match and saves
+    ladder.js         bot-vs-bot measurement
+    theme.js          per-player CSS, localStorage only
+    styles.css        the default look; every rule overridable
+    rng.js hash.js    seeded randomness; canonical hashing
+  /rulesets
+    index.js          THE REGISTRY
+    tictactoe.js hexapawn.js   the two worked examples — read these first
+    territory.js checkers.js chess.js
+/test                 reaches in with ../root/src/... — conformance.test.js
+                      runs the same battery on every registered ruleset,
+                      and that one is the centerpiece
+/tools                benchmarks, run by hand from the repo root
 ```
+
+Tests and tools live OUTSIDE `/root` so the published site carries only
+what it needs. Anything under `/root` is publicly readable once
+deployed, which is required: the ruleset code editor and the styling
+editor both fetch their own source at runtime.
 
 ## Style
 

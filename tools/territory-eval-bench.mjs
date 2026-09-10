@@ -1,6 +1,13 @@
-import { Engine } from '/home/claude/checkered/src/engine.js';
-import { greedyAi, playTurn, seededRandom } from '/home/claude/checkered/src/ai-api.js';
-import { getRuleset } from '/home/claude/checkered/rulesets/index.js';
+/* Run from the repo root:  node tools/territory-eval-bench.mjs [games] [turns]
+ *
+ * Compares two Territory evaluators by playing them against each other
+ * and scoring the result in moves-per-turn generated — a yardstick
+ * neither of them optimises directly.
+ */
+
+import { Engine } from '../root/src/engine.js';
+import { greedyAi, playTurn, seededRandom } from '../root/src/ai-api.js';
+import { getRuleset } from '../root/rulesets/index.js';
 
 const entry = getRuleset('territory');
 const rs = entry.ruleset;

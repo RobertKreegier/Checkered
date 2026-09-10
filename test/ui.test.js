@@ -11,8 +11,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
-import { Engine } from '../src/engine.js';
-import { allRulesets, getRuleset } from '../rulesets/index.js';
+import { Engine } from '../root/src/engine.js';
+import { allRulesets, getRuleset } from '../root/rulesets/index.js';
 
 function setupDom() {
   const dom = new JSDOM(`<!doctype html><html><body>
@@ -66,9 +66,9 @@ async function mountUI(id) {
   setupDom();
   // A fresh module per mount: main.js caches DOM references, and a
   // cached module would hold nodes from a previous test's document.
-  const main = await import(`../src/main.js?ui=${id}&t=${Math.random()}`);
+  const main = await import(`../root/src/main.js?ui=${id}&t=${Math.random()}`);
   const { UI } = main;
-  const { BoardView } = await import('../src/board.js');
+  const { BoardView } = await import('../root/src/board.js');
   const { eng, entry } = gameFor(id);
 
   UI.engine = eng;
@@ -149,8 +149,8 @@ for (const entry of allRulesets()) {
 test('an ambiguous square offers a choice, and picking one applies it', async () => {
   // A chess promotion is the clearest case: four actions, one square.
   setupDom();
-  const main = await import('../src/main.js?promo&t=' + Math.random());
-  const { BoardView } = await import('../src/board.js');
+  const main = await import('../root/src/main.js?promo&t=' + Math.random());
+  const { BoardView } = await import('../root/src/board.js');
   const chess = getRuleset('chess');
   const eng = new Engine(chess.ruleset, {
     players: chess.defaultPlayers,
@@ -184,7 +184,7 @@ test('an ambiguous square offers a choice, and picking one applies it', async ()
 
 test('main.js contains no game-specific branching', async () => {
   const src = await import('node:fs').then(fs =>
-    fs.promises.readFile(new URL('../src/main.js', import.meta.url), 'utf8'));
+    fs.promises.readFile(new URL('../root/src/main.js', import.meta.url), 'utf8'));
   const code = src
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '');
@@ -262,7 +262,7 @@ test('a finished game skips the are-you-sure prompt', async () => {
 
 test('index.html provides the hooks main.js reaches for', async () => {
   const fs = await import('node:fs');
-  const html = await fs.promises.readFile(new URL('../index.html', import.meta.url), 'utf8');
+  const html = await fs.promises.readFile(new URL('../root/index.html', import.meta.url), 'utf8');
   for (const id of ['wordmark', 'gamename', 'pbody', 'pfoot', 'veil', 'modal', 'boardwrap']) {
     assert.match(html, new RegExp(`id="${id}"`), `index.html is missing #${id}`);
   }
@@ -272,7 +272,7 @@ test('index.html provides the hooks main.js reaches for', async () => {
 
 test('the board suppresses text selection', async () => {
   const fs = await import('node:fs');
-  const css = await fs.promises.readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+  const css = await fs.promises.readFile(new URL('../root/src/styles.css', import.meta.url), 'utf8');
   // Counters and labels are real text nodes, so dragging to pan would
   // otherwise sweep a selection across every square it crosses.
   assert.match(css, /\.board-view[^}]*user-select:\s*none|user-select:\s*none/,
@@ -284,7 +284,7 @@ test('the board suppresses text selection', async () => {
 
 test('a seat\u2019s chosen color reaches the piece, not a hardcoded shade', async () => {
   const fs = await import('node:fs');
-  const css = await fs.promises.readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+  const css = await fs.promises.readFile(new URL('../root/src/styles.css', import.meta.url), 'utf8');
   // Rulesets pass seat colors down through describeCell; a fixed color
   // on .piece.light / .piece.dark silently overrides the player's pick.
   assert.match(css, /\.piece\s*\{[^}]*color:\s*var\(--unit-color/,
@@ -350,7 +350,7 @@ test('the second player cannot place on top of the first', async () => {
 
 test('filled buttons stay readable on hover', async () => {
   const fs = await import('node:fs');
-  const css = await fs.promises.readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+  const css = await fs.promises.readFile(new URL('../root/src/styles.css', import.meta.url), 'utf8');
   // The generic hover paints text brass; on a brass-filled button that
   // erases the label, so filled buttons need their own hover rule.
   const rule = css.match(/button\.on:hover[^{]*,\s*\n?button\.primary:hover[^{]*\{([^}]*)\}/);
@@ -374,14 +374,14 @@ test('placement squares are marked apart from move targets', async () => {
     'placement must not borrow the move-target treatment \u2014 it covers the whole view');
 
   const fs = await import('node:fs');
-  const css = await fs.promises.readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+  const css = await fs.promises.readFile(new URL('../root/src/styles.css', import.meta.url), 'utf8');
   const place = css.match(/\.cell\.hl-place\s*\{([^}]*)\}/);
   assert.ok(place, 'hl-place needs a style of its own');
   assert.doesNotMatch(place[1], /dashed/, 'the quiet treatment should not be dashed');
 });
 
 test('every built-in ruleset knows where its own source lives', async () => {
-  const { allRulesets } = await import('../rulesets/index.js');
+  const { allRulesets } = await import('../root/rulesets/index.js');
   for (const e of allRulesets()) {
     assert.ok(e.sourceUrl || e.source,
       `${e.id} has no source for the code editor to show`);
@@ -389,8 +389,8 @@ test('every built-in ruleset knows where its own source lives', async () => {
 });
 
 test('a ruleset registered from pasted text carries its own text', async () => {
-  const { registerRuleset, getRuleset, unregisterRuleset } = await import('../rulesets/index.js');
-  const { default: chess } = await import('../rulesets/chess.js');
+  const { registerRuleset, getRuleset, unregisterRuleset } = await import('../root/rulesets/index.js');
+  const { default: chess } = await import('../root/rulesets/chess.js');
   const variant = { ...chess, id: 'chess-variant', name: 'Chess Variant' };
   const entry = registerRuleset(variant, { source: '// pasted', custom: true });
   assert.equal(entry.source, '// pasted', 'the editor should show what was pasted');
@@ -405,8 +405,8 @@ test('undo is refused while a match is running', async () => {
   // different boards, and every move afterwards would be reported as a
   // disagreement with no sign of the real cause.
   const { main, UI } = await mountUI('chess');
-  const { hostMatch } = await import('../src/match.js');
-  const { getRuleset } = await import('../rulesets/index.js');
+  const { hostMatch } = await import('../root/src/match.js');
+  const { getRuleset } = await import('../root/rulesets/index.js');
 
   const entry = getRuleset('chess');
   const { match } = hostMatch({ entry, players: entry.defaultPlayers, seed: 5 });
@@ -428,8 +428,8 @@ test('undo is refused while a match is running', async () => {
 
 test('the board is not clickable on the other player\u2019s turn', async () => {
   const { main, UI } = await mountUI('chess');
-  const { hostMatch } = await import('../src/match.js');
-  const { getRuleset } = await import('../rulesets/index.js');
+  const { hostMatch } = await import('../root/src/match.js');
+  const { getRuleset } = await import('../root/rulesets/index.js');
 
   const entry = getRuleset('chess');
   const { match } = hostMatch({ entry, players: entry.defaultPlayers, seed: 5 });
@@ -455,7 +455,7 @@ test('the board is not clickable on the other player\u2019s turn', async () => {
 
 test('the game in progress is written down as it is played', async () => {
   const { main, UI } = await mountUI('chess');
-  const { hasResumable, loadAutosave, clearAutosave } = await import('../src/saves.js');
+  const { hasResumable, loadAutosave, clearAutosave } = await import('../root/src/saves.js');
   clearAutosave();
 
   const step = main.currentActions().find(a => a.from && a.to);
@@ -476,7 +476,7 @@ test('the game in progress is written down as it is played', async () => {
 
 test('a restored game lands on the same position', async () => {
   const { main, UI } = await mountUI('chess');
-  const { snapshot, restore } = await import('../src/saves.js');
+  const { snapshot, restore } = await import('../root/src/saves.js');
 
   for (const a of main.currentActions().slice(0, 1)) {
     UI.engine.applyAction(a.action, a.actor);

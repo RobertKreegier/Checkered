@@ -338,6 +338,20 @@ learns a game's vocabulary. (This came out of a guard test catching
   renderer or the UI learns a game's vocabulary; one of them caught
   `main.js` reading `player.armory`, which is why seats now carry
   neutral `colors.primary` / `colors.accent`. Suite at 174 tests.
+- **2026-09-08 · project-wide** — Everything the website serves moved
+  into `/root`: `index.html`, `src/`, and `rulesets/`. `test/` and
+  `tools/` stay at the repo root, so the published site carries only
+  what it needs. Netlify's publish directory is `root`; the build
+  command stays empty.
+
+  Nothing inside `/root` changed — `src/` and `rulesets/` moved
+  together, so their relative imports still resolve, and `index.html`
+  still points at `./src/...`. What broke was everything reaching *in*
+  from outside: 62 references across 13 test files, the two guard tests
+  that read `index.html` and `styles.css` as text, and the eval bench,
+  which had absolute paths from the machine it was written on and is
+  now relative. Suite verified green from the new layout, and the site
+  verified by serving `root/` and playing through a save-and-resume.
 - **2026-09-07 · saves.js, codec.js, main.js** — Saved games, built on
   the same invariant multiplayer runs on. **A save is an action list,
   not a board.** A board would be smaller but it throws away the record
