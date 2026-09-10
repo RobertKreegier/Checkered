@@ -368,7 +368,30 @@ learns a game's vocabulary. (This came out of a guard test catching
   every colour is a stylesheet opinion, overridable by a player's own
   CSS, and a ruleset with no phases leaves the attribute off.
 
-  Follow-up the same day: **a step change now clears the selection.**
+  Follow-up, second attempt: **a step change now clears the selection.**
+  The first attempt did not work in play, and the reason is worth
+  keeping. `applyAction()` notifies its listeners *synchronously*, so
+  by the time `commit()` reaches its next line, `refresh()` has already
+  run and already cleared the selection — and then `commit()` set it
+  straight back to the action's destination. The check has to happen in
+  `commit()` too: it compares the phase before and after and only
+  restores the selection when the step did not change.
+
+  Two testing lessons, both about fixtures lying:
+  - The first test called `applyAction` directly, skipping `commit()` —
+    the one place the bug lived.
+  - Rewriting it to use `commit()` still passed, because it ended the
+    step with the *done* button, and `endProduction` has no `from`, so
+    the old code set null anyway. The bug only appears when a
+    **produce** action auto-ends the step, since that action has a
+    `from` to restore.
+  - Even then it passed, because the test fixture's `onChange` called
+    only `touchAutosave()`, not `refresh()` — so the synchronous
+    re-render that creates the bug never happened. The fixture now
+    mirrors `startGame` fully.
+
+  Verified the test goes red with the fix reverted and green with it
+  restored, which is the only real proof a regression test works.
   The stack held at the end of production was staying in hand into the
   move step, which is precisely how the misclick happened — the next
   click finished something the player had forgotten they started. This

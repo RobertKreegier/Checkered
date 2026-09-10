@@ -81,7 +81,10 @@ async function mountUI(id) {
   });
   // Mirror what startGame() wires up, so the fixture exercises the same
   // path the real one does rather than a simplified version of it.
-  eng.onChange(() => main.touchAutosave());
+  // refresh() matters as much as the autosave: applyAction notifies
+  // synchronously, so real code re-renders in the middle of commit().
+  // A fixture that skips it hides every bug that lives in that gap.
+  eng.onChange(() => { main.touchAutosave(); main.refresh(); });
   UI.board.attach(eng);
   return { main, UI, eng };
 }
@@ -550,11 +553,25 @@ test('changing step clears whatever was selected', async () => {
   assert.ok(UI.selected, 'a stack is selected');
   const phaseBefore = UI.engine.ruleset.summarize(UI.engine.state).phase;
 
-  // End the step.
-  const done = main.currentActions().find(a => a.action.type === 'endProduction');
-  assert.ok(done, 'there should be a way to end production');
-  UI.engine.applyAction(done.action, done.actor);
-  main.refresh();
+  // End the step by PRODUCING until it ends on its own, not by pressing
+  // the done button. That distinction is the whole bug: a produce action
+  // has a `from`, so commit() re-selects its origin afterwards — and
+  // applyAction has already fired refresh() by then, so the step-change
+  // check had cleared the selection a moment earlier and commit put it
+  // straight back. An endProduction action has no `from` and would have
+  // passed either way.
+  let guard = 0;
+  while (main.currentPhase() === phaseBefore && guard++ < 80) {
+    const produce = main.currentActions().find(a => a.action.type === 'produce');
+    if (!produce) {
+      const done = main.currentActions().find(a => a.action.type === 'endProduction');
+      assert.ok(done, 'nothing left to produce and no way to end the step');
+      main.commit(done);
+      break;
+    }
+    main.commit(produce);
+  }
+  assert.ok(guard < 80, 'the production step should have ended');
 
   assert.notEqual(UI.engine.ruleset.summarize(UI.engine.state).phase, phaseBefore);
   assert.equal(UI.selected, null, 'the new step should start with nothing in hand');

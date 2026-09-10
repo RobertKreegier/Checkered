@@ -587,6 +587,14 @@ function onCellClick(cell, opts) {
 }
 
 function commit(entry) {
+  // Where the game was before the action. applyAction() notifies its
+  // listeners synchronously, so refresh() — and with it the step-change
+  // check — has already run by the time the next line here executes.
+  // Setting the selection afterwards would put back exactly what that
+  // check had just cleared, which is what made the held stack survive
+  // into the move step.
+  const phaseBefore = currentPhase();
+
   try {
     if (UI.match) {
       // In a match every move goes through the match layer, which
@@ -597,12 +605,18 @@ function commit(entry) {
     }
     UI.lastMove = { from: entry.from, to: entry.to };
     UI.pendingTargets = null;
-    // Keep the selection on the destination so chains feel continuous —
-    // but only for actions that moved something. An action with no
-    // origin (placing an opening piece) isn't a chain, and holding a
-    // selection afterwards would hide the next player's own placement
-    // highlights, so they'd never see where they are allowed to go.
-    UI.selected = entry.from ? (entry.to || null) : null;
+
+    if (currentPhase() !== phaseBefore) {
+      // The action ended the step. Start the new one with empty hands.
+      UI.selected = null;
+    } else {
+      // Keep the selection on the destination so chains feel continuous
+      // — but only for actions that moved something. An action with no
+      // origin (placing an opening piece) isn't a chain, and holding a
+      // selection afterwards would hide the next player's own placement
+      // highlights, so they'd never see where they are allowed to go.
+      UI.selected = entry.from ? (entry.to || null) : null;
+    }
   } catch (err) {
     flash(err.message);
   }
@@ -1435,4 +1449,5 @@ if (typeof document !== 'undefined' && document.getElementById('modal')) boot();
 export {
   UI, onCellClick, currentActions, setWordmark, confirmNew, openPicker,
   refresh, maybeRunAi, startGame, touchAutosave, currentSnapshot, adoptSave,
+  commit, currentPhase,
 };
