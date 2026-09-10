@@ -23,6 +23,11 @@ import { allAis, getAi, takeTurn, positionHash, seededRandom, DEFAULT_WEIGHTS } 
 // the opponent list beside Greedy.
 import './ai-search.js';
 import { hostMatch, joinMatch, decodeMove, encodeMove } from './match.js';
+import {
+  snapshot, restore, encodeSave, decodeSave, describeSave, saveFilename,
+  autosave, loadAutosave, clearAutosave, hasResumable,
+  listSaves, saveSlot, loadSlot, deleteSlot,
+} from './saves.js';
 
 const $ = sel => document.querySelector(sel);
 
@@ -119,6 +124,7 @@ function openPicker() {
         <button class="primary" id="go">Set the board</button>
         <button id="rules">Read the rules</button>
       </div>
+      ${resumeHtml()}
       <div class="eyebrow" style="margin-top:20px">Play someone else</div>
       <p class="hint" style="margin-top:0">No account and no server: you send
       your friend a code, they send one back, and the game keeps step. Works
@@ -143,6 +149,19 @@ function openPicker() {
       if (sel) sel.onchange = () => { seats[i] = sel.value || null; };
     }
     $('#rules').onclick = () => showRules(chosen.ruleset, paint);
+    const resume = $('#resume');
+    if (resume) {
+      resume.onclick = () => {
+        try {
+          adoptSave(loadAutosave());
+        } catch (err) {
+          $('#warn').textContent = err.message;
+        }
+      };
+      $('#discard').onclick = () => { clearAutosave(); paint(); };
+    }
+    const saved = $('#opensaves');
+    if (saved) saved.onclick = () => showSaves(paint);
     $('#host').onclick = () => startHosting(chosen, readSeats(count));
     $('#joinbtn').onclick = () => showJoin();
     $('#go').onclick = () => {
@@ -165,6 +184,31 @@ function openPicker() {
   };
 
   paint();
+}
+
+/** The "you were in the middle of something" offer. */
+function resumeHtml() {
+  const stored = listSaves();
+  const resumable = hasResumable() ? describeSave(loadAutosave()) : null;
+  if (!resumable && !stored.length) return '';
+
+  let h = '<div class="eyebrow" style="margin-top:20px">Carry on</div>';
+  if (resumable) {
+    h += `<div class="card" style="margin-bottom:8px">
+      <div class="rowlab">a game in progress</div>
+      <div class="stackname" style="font-size:20px">${resumable.game}</div>
+      <div class="kv"><span>${resumable.players}</span><b>${resumable.moves} move${
+      resumable.moves === 1 ? '' : 's'}</b></div>
+      <div class="btnrow" style="margin-top:8px">
+        <button class="primary" id="resume">Pick up where you left off</button>
+        <button id="discard">Forget it</button>
+      </div>
+    </div>`;
+  }
+  if (stored.length) {
+    h += `<div class="btnrow"><button id="opensaves">Saved games (${stored.length})</button></div>`;
+  }
+  return h;
 }
 
 /** Read the player rows out of the picker. */
@@ -199,12 +243,70 @@ function startGame(entry, players, seats = []) {
   // Seeded, so a game against a bot replays like any other.
   UI.aiRandom = seededRandom(UI.engine.seed ^ 0x5f3759df);
 
-  UI.engine.onChange(() => { refresh(); });
+  UI.engine.onChange(() => { touchAutosave(); refresh(); });
   UI.board.attach(UI.engine);
   setWordmark(entry.name);
+  clearAutosave();          // a new game replaces whatever was in progress
   closeModal();
   refresh();
   maybeRunAi();
+}
+
+/* ============================================================
+   KEEPING THE GAME
+   ============================================================ */
+
+/** Everything needed to rebuild what is on the board right now. */
+function currentSnapshot(name = null) {
+  if (!UI.engine || !UI.entry) return null;
+  return snapshot(UI.engine, {
+    entry: UI.entry,
+    name,
+    seats: UI.match ? [...UI.match.localSeats] : null,
+    pin: UI.match ? UI.match.pin : null,
+  });
+}
+
+/**
+ * Write the game down after every move.
+ *
+ * Debounced, because a Territory turn is a hundred actions and each one
+ * fires a change — writing a hundred times a turn would be pointless and
+ * slow. A short delay collapses them into one.
+ */
+let saveTimer = null;
+function touchAutosave() {
+  if (!UI.engine || !UI.entry) return;
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    const save = currentSnapshot();
+    // A refusal here is almost always a full quota. It must not
+    // interrupt the game, so it is noted and nothing more.
+    if (save && !autosave(save)) UI.storageFull = true;
+  }, 250);
+}
+
+/** Put a restored game on the board. */
+function adoptSave(save) {
+  const { entry, engine } = restore(save);
+  clearAiTimer();
+  UI.match = null;
+  UI.online = false;
+  UI.entry = entry;
+  UI.engine = engine;
+  UI.seats = save.seats ? [] : (UI.seats || []);
+  UI.selected = null;
+  UI.pendingTargets = null;
+  UI.lastMove = null;
+  UI.thinking = false;
+  UI.pendingCodes = [];
+
+  engine.onChange(() => { touchAutosave(); refresh(); });
+  UI.board.attach(engine);
+  setWordmark(entry.name);
+  closeModal();
+  refresh();
 }
 
 /* ============================================================
@@ -231,6 +333,7 @@ function adoptMatch(match, entry) {
       UI.engine = match.engine;
       UI.board.attach(UI.engine);
     }
+    touchAutosave();
     refresh();
   });
 
@@ -648,6 +751,7 @@ function renderPanel(actions) {
     <button id="rulesbtn" title="Rules">?</button>
     <button id="setbtn" title="Settings">⚙</button>
     <button id="codebtn" title="Ruleset code">&lt;/&gt;</button>
+    <button id="savebtn" title="Saved games">💾</button>
     <button id="themebtn" title="Your styling">🎨</button>
     <button id="newbtn" title="New game">⟲</button>`;
 
@@ -735,6 +839,7 @@ function bindPanel(actions) {
   $('#rulesbtn').onclick = () => showRules(UI.engine.ruleset, null);
   $('#setbtn').onclick = showSettings;
   $('#codebtn').onclick = showCode;
+  $('#savebtn').onclick = () => showSaves(null);
   $('#themebtn').onclick = showTheme;
   $('#newbtn').onclick = confirmNew;
 }
@@ -1079,6 +1184,120 @@ ${vars.map(([name, note]) => `  ${name}: ${v(name) || 'inherit'};`.padEnd(38) + 
 `;
 }
 
+/**
+ * Saved games: keep this one, open an old one, or move a game between
+ * browsers as a code.
+ */
+function showSaves(back = null) {
+  const saves = listSaves();
+  const playing = !!(UI.engine && UI.entry);
+
+  modal(`<div class="rules">
+    <h2>Saved <span>games</span></h2>
+    <p class="sub">Kept in this browser \u00b7 nothing is sent anywhere</p>
+
+    ${playing ? `<h3>Keep this game</h3>
+      <div class="prow" style="grid-template-columns:1fr 120px">
+        <input type="text" id="savename" maxlength="40"
+          placeholder="${UI.entry.name} \u2014 ${new Date().toLocaleDateString()}">
+        <button class="primary" id="dosave">Save</button>
+      </div>` : ''}
+
+    <h3>Your saved games</h3>
+    ${saves.length ? saves.map(s2 => {
+    const d = describeSave(s2);
+    return `<div class="srow">
+        <label>
+          <b>${d.name}</b><br>
+          <span class="rowlab">${d.game} \u00b7 ${d.moves} moves \u00b7 ${
+      d.when ? d.when.toLocaleString() : ''}${d.shared ? ' \u00b7 shared game' : ''}</span>
+        </label>
+        <span class="btnrow" style="flex:0 0 auto">
+          <button data-open="${d.id}">Open</button>
+          <button data-del="${d.id}">Delete</button>
+        </span>
+      </div>`;
+  }).join('') : '<p class="hint">Nothing saved yet.</p>'}
+
+    <h3>Move a game somewhere else</h3>
+    <p class="hint">A saved game is a piece of text. Copy it into another
+    browser, or send it to someone who wants to see the position.</p>
+    <div class="btnrow" style="margin-bottom:8px">
+      ${playing ? '<button id="export">Copy this game as a code</button>'
+    + '<button id="download">Download it</button>' : ''}
+    </div>
+    <textarea id="savecode" class="code" spellcheck="false"
+      placeholder="Paste a saved game here to open it"></textarea>
+    <div class="warn" id="swarn2"></div>
+    <div class="btnrow" style="margin-top:8px">
+      <button class="primary" id="import">Open a pasted game</button>
+      <button id="closesaves">${back ? 'Back' : 'Close'}</button>
+    </div>
+  </div>`);
+
+  const warn = $('#swarn2');
+  const say = (msg, good) => {
+    warn.className = good ? 'warn ok' : 'warn';
+    warn.textContent = msg;
+  };
+
+  const dosave = $('#dosave');
+  if (dosave) {
+    dosave.onclick = () => {
+      const name = $('#savename').value.trim()
+        || `${UI.entry.name} — ${new Date().toLocaleDateString()}`;
+      const id = saveSlot(currentSnapshot(name), name);
+      if (id) showSaves(back);
+      else say('There was no room to save. Delete an old game and try again.');
+    };
+  }
+
+  const exportBtn = $('#export');
+  if (exportBtn) {
+    exportBtn.onclick = () => {
+      $('#savecode').value = encodeSave(currentSnapshot());
+      copyFrom($('#savecode'), exportBtn, 'Copy this game as a code');
+    };
+  }
+
+  const download = $('#download');
+  if (download) {
+    download.onclick = () => {
+      const save = currentSnapshot();
+      const blob = new Blob([encodeSave(save)], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = saveFilename(save);
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+  }
+
+  $('#import').onclick = () => {
+    try {
+      adoptSave(decodeSave($('#savecode').value));
+    } catch (err) {
+      say(err.message);
+    }
+  };
+
+  modal.el.querySelectorAll('[data-open]').forEach(b => {
+    b.onclick = () => {
+      try {
+        adoptSave(loadSlot(b.dataset.open));
+      } catch (err) {
+        say(err.message);
+      }
+    };
+  });
+  modal.el.querySelectorAll('[data-del]').forEach(b => {
+    b.onclick = () => { deleteSlot(b.dataset.del); showSaves(back); };
+  });
+
+  $('#closesaves').onclick = () => (back ? back() : closeModal());
+}
+
 function confirmNew() {
   // Nothing to lose before a game starts, or once one has finished.
   if (!UI.engine || UI.engine.isOver()) return openPicker();
@@ -1144,4 +1363,7 @@ export function boot() {
 
 if (typeof document !== 'undefined' && document.getElementById('modal')) boot();
 
-export { UI, onCellClick, currentActions, setWordmark, confirmNew, openPicker, refresh, maybeRunAi, startGame };
+export {
+  UI, onCellClick, currentActions, setWordmark, confirmNew, openPicker,
+  refresh, maybeRunAi, startGame, touchAutosave, currentSnapshot, adoptSave,
+};

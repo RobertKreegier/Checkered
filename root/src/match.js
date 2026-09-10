@@ -42,30 +42,11 @@
 import { Engine, verifyRemoteAction } from './engine.js';
 import { hashState } from './hash.js';
 import { getRuleset } from '../rulesets/index.js';
+import { pack, unpack } from './codec.js';
 
 /* ============================================================
    ENCODING
    ============================================================ */
-
-/** Base64url that works in a browser and in node. */
-function toBase64(text) {
-  const bytes = new TextEncoder().encode(text);
-  let binary = '';
-  for (const b of bytes) binary += String.fromCharCode(b);
-  const raw = typeof btoa === 'function'
-    ? btoa(binary)
-    : Buffer.from(bytes).toString('base64');
-  return raw.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-function fromBase64(code) {
-  const raw = code.replace(/-/g, '+').replace(/_/g, '/');
-  const binary = typeof atob === 'function'
-    ? atob(raw)
-    : Buffer.from(raw, 'base64').toString('binary');
-  const bytes = Uint8Array.from(binary, ch => ch.charCodeAt(0));
-  return new TextDecoder().decode(bytes);
-}
 
 /**
  * The invitation: everything needed to build the same opening position.
@@ -74,12 +55,11 @@ function fromBase64(code) {
  * window. No board state, because both sides can derive it.
  */
 export function encodeInvite(descriptor) {
-  return toBase64(JSON.stringify(descriptor));
+  return pack(descriptor);
 }
 
 export function decodeInvite(code) {
-  const text = fromBase64(String(code).trim());
-  const d = JSON.parse(text);
+  const d = unpack(code, 'invitation');
   for (const field of ['rulesetId', 'seed', 'players']) {
     if (d[field] === undefined) throw new Error(`This invitation is missing its ${field}.`);
   }
@@ -88,11 +68,11 @@ export function decodeInvite(code) {
 
 /** A move on the wire. */
 export function encodeMove(packet) {
-  return toBase64(JSON.stringify(packet));
+  return pack(packet);
 }
 
 export function decodeMove(code) {
-  const p = JSON.parse(fromBase64(String(code).trim()));
+  const p = unpack(code, 'move code');
   if (p.type === undefined) p.type = 'action';
   return p;
 }
@@ -444,12 +424,19 @@ export function hostMatch({
   hostSeat = 0, transport = null, sourceText = null,
 }) {
   const chosenSeed = seed ?? Math.floor(Math.random() * 2 ** 31);
-  const pin = rulesPin(entry, config, sourceText);
 
   const match = new Match({
     entry, config, seed: chosenSeed, players,
-    localSeats: [hostSeat], transport, pin,
+    localSeats: [hostSeat], transport, pin: null,
   });
+
+  // Pin on the *effective* config — the settings given, merged over the
+  // ruleset's own defaults — not on what was passed in. Two sides can
+  // pass the same partial settings and still end up playing differently
+  // if their copies of the ruleset have different defaults, and that is
+  // exactly the case a pin exists to catch.
+  const pin = rulesPin(entry, match.engine.config, sourceText);
+  match.pin = pin;
 
   const invite = encodeInvite({
     rulesetId: entry.ruleset.id,
@@ -478,14 +465,6 @@ export function joinMatch(code, { transport = null, sourceText = null, lookup = 
     throw new Error(`You don't have the ruleset "${d.rulesetId}".`);
   }
 
-  const ourPin = rulesPin(entry, d.config || {}, sourceText);
-  if (d.pin && ourPin !== d.pin) {
-    throw new Error(
-      'Your copy of these rules differs from the host\'s. '
-      + 'One of you has edited the ruleset or changed a setting.',
-    );
-  }
-
   const seats = (d.players || []).map((_, i) => i).filter(i => i !== (d.hostSeat ?? 0));
 
   const match = new Match({
@@ -495,8 +474,18 @@ export function joinMatch(code, { transport = null, sourceText = null, lookup = 
     players: d.players,
     localSeats: seats.length ? [seats[0]] : [1],
     transport,
-    pin: d.pin || ourPin,
+    pin: null,
   });
+
+  // Compared on the effective config, for the reason given in hostMatch.
+  const ourPin = rulesPin(entry, match.engine.config, sourceText);
+  if (d.pin && ourPin !== d.pin) {
+    throw new Error(
+      'Your copy of these rules differs from the host\'s. '
+      + 'One of you has edited the ruleset or changed a setting.',
+    );
+  }
+  match.pin = d.pin || ourPin;
 
   return { match, descriptor: d };
 }

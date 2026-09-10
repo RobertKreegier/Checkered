@@ -254,7 +254,11 @@ body {
   text-transform: uppercase; color: var(--mute); margin-top: 6px;
 }
 .pbody { padding: 16px 18px; overflow-y: auto; flex: 1; min-height: 0; }
-.pfoot { padding: 12px 18px; border-top: 1px solid var(--line); display: flex; gap: 8px; flex-wrap: wrap; }
+.pfoot { padding: 12px 18px; border-top: 1px solid var(--line); display: flex; gap: 6px; flex-wrap: wrap; }
+/* The icon buttons are a row of single glyphs, so they should take only
+   the room they need and leave the primary action its width. */
+.pfoot button:not(.primary) { padding: 9px 7px; min-width: 0; flex: 0 0 auto; }
+.pfoot button.primary { min-width: 96px; }
 
 .eyebrow {
   font-family: var(--mono); font-size: 10px; letter-spacing: .18em;

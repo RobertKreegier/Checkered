@@ -79,6 +79,9 @@ async function mountUI(id) {
   UI.board = new BoardView(document.getElementById('boardwrap'), {
     onCellClick: main.onCellClick,
   });
+  // Mirror what startGame() wires up, so the fixture exercises the same
+  // path the real one does rather than a simplified version of it.
+  eng.onChange(() => main.touchAutosave());
   UI.board.attach(eng);
   return { main, UI, eng };
 }
@@ -446,4 +449,39 @@ test('the board is not clickable on the other player\u2019s turn', async () => {
     'clicking during their turn must not move their pieces');
 
   UI.match = null;
+});
+
+/* ---------- keeping the game ---------- */
+
+test('the game in progress is written down as it is played', async () => {
+  const { main, UI } = await mountUI('chess');
+  const { hasResumable, loadAutosave, clearAutosave } = await import('../src/saves.js');
+  clearAutosave();
+
+  const step = main.currentActions().find(a => a.from && a.to);
+  main.onCellClick(step.from, {});
+  main.onCellClick(step.to, {});
+
+  // The write is debounced, so a Territory turn of a hundred actions
+  // doesn't write a hundred times. Wait for it to land.
+  await new Promise(r => setTimeout(r, 400));
+
+  assert.ok(hasResumable(), 'a played move should leave something to come back to');
+  const save = loadAutosave();
+  assert.equal(save.rulesetId, 'chess');
+  assert.ok(save.actions.length >= 1);
+  assert.equal(save.board, undefined, 'a save is actions, not a board');
+  clearAutosave();
+});
+
+test('a restored game lands on the same position', async () => {
+  const { main, UI } = await mountUI('chess');
+  const { snapshot, restore } = await import('../src/saves.js');
+
+  for (const a of main.currentActions().slice(0, 1)) {
+    UI.engine.applyAction(a.action, a.actor);
+  }
+  const before = UI.engine.fingerprint();
+  const { engine } = restore(snapshot(UI.engine, { entry: UI.entry }));
+  assert.equal(engine.fingerprint(), before);
 });

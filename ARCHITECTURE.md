@@ -338,6 +338,41 @@ learns a game's vocabulary. (This came out of a guard test catching
   renderer or the UI learns a game's vocabulary; one of them caught
   `main.js` reading `player.armory`, which is why seats now carry
   neutral `colors.primary` / `colors.accent`. Suite at 174 tests.
+- **2026-09-07 · saves.js, codec.js, main.js** — Saved games, built on
+  the same invariant multiplayer runs on. **A save is an action list,
+  not a board.** A board would be smaller but it throws away the record
+  and undo, and it can drift from what the rules actually produce with
+  nothing to catch it; an action list either replays exactly or fails
+  loudly. It doubles as a transcript.
+
+  Three ways to keep a game, all shipped:
+
+  - **Autosave** on every move, debounced (a Territory turn is a
+    hundred actions and each fires a change). The picker offers to pick
+    up where you left off. This is the one that fixes the actual pain —
+    a refresh no longer loses the game.
+  - **Named slots** in the same storage, listed newest first.
+  - **Export/import** as a code or a downloaded file. A four-move chess
+    game is about 1KB.
+
+  `src/codec.js` was extracted so match.js and saves.js share one
+  base64url implementation rather than each carrying a copy.
+
+  Verified in a browser: play, reload, resume with the record intact,
+  and import a code into a completely fresh browser profile.
+
+  Two real bugs found on the way. `hostMatch` pinned the rules on the
+  *partial* config passed in, while the engine's effective config is
+  that merged over the ruleset's defaults — so a save made from a match
+  could never be reloaded, and worse, two players whose ruleset defaults
+  differed would have matched pins. Both host and join now pin on the
+  effective config. And a UI test exposed that the test fixture never
+  attached the autosave hook, so it was checking a path the fixture
+  didn't wire; the fixture now mirrors `startGame`.
+
+  Storage failures (private browsing, full quota) are absorbed
+  throughout and reported by return value — a save that cannot be
+  written is a disappointment, not a crash. Suite at 366 tests.
 - **2026-09-06 · main.js, styles.css** — Wired the match layer into the
   interface, which is what actually makes it a feature rather than
   groundwork. The picker gained **Invite a friend** and **I have an
