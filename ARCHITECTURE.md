@@ -338,6 +338,46 @@ learns a game's vocabulary. (This came out of a guard test catching
   renderer or the UI learns a game's vocabulary; one of them caught
   `main.js` reading `player.armory`, which is why seats now carry
   neutral `colors.primary` / `colors.accent`. Suite at 174 tests.
+- **2026-09-10 · rulesets/territory.js** — **The production step is
+  gone by default, and moves now come only from burning armory.** Bob's
+  proposal from playtesting, and the arithmetic backs it: a pawn costs
+  four production points, and four points is also two armory, which
+  melts into exactly one unit chip. Producing armory and melting it was
+  always the same rate as producing the chip outright, so armory was
+  never the worse choice and the step had nothing to decide — only
+  clicking. Stacks now make their armory automatically at the start of
+  a play and the game opens at the move step.
+
+  **Melting can now build outward**, which is what makes the change
+  work rather than merely simplify. The one thing direct production
+  bought that armory could not was placing a chip on an adjacent square
+  for no moves; without it, skipping the step would have quietly made
+  expansion cost a move it never cost before, and with moves now scarce
+  that would have slowed the game badly. A build may land on the stack
+  that paid for it or any square touching it — own ground, empty
+  ground, or a loose pile, which it picks up. Never on a rival: that
+  would be an attack that costs no moves.
+
+  `moveFactor` now defaults to 0. Ground no longer pays by itself, so
+  the evaluator gained a ground term that applies **only** when
+  `moveFactor` is 0 — when a square yields a move its worth is already
+  in income and counting it again would double it. Ground still matters
+  for the three things Bob identified in play: a line of pawns is a
+  wall, a road that halves a knight's cost per square, and salvage left
+  from battles.
+
+  Consequence worth recording: the knight-equals-two-spread-pawns
+  identity no longer holds under the defaults, because pawns now earn
+  nothing. That test was not deleted — it was split, one case for each
+  economy, since both are supported settings.
+
+  The classic rules are `autoProduce: false, moveFactor: 1`. The
+  Territory test helpers ask for them explicitly, since most of those
+  tests are about production budgets and the move budget.
+
+  The rules-drift guard earned its keep a second time: it failed the
+  moment the rules still quoted production costs the game no longer
+  charges. Suite at 389 tests.
 - **2026-09-09 · engine.js, main.js, styles.css, territory.js** — Two
   playtesting complaints, one of them a real bug.
 

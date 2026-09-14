@@ -194,7 +194,10 @@ test('every log line records which action wrote it', () => {
   // rewinds to the wrong place.
   const entry = getRuleset('territory');
   const eng = new Engine(entry.ruleset, {
-    players: entry.defaultPlayers.slice(0, 2), config: { scatterStacks: 1 }, seed: 4,
+    players: entry.defaultPlayers.slice(0, 2), seed: 4,
+    // The classic settings: this test scripts explicit produce actions,
+    // which exist only when the production step does.
+    config: { scatterStacks: 1, autoProduce: false, moveFactor: 1 },
   });
   eng.applyAction({ type: 'place', x: 0, y: 0 }, 0);
   eng.applyAction({ type: 'place', x: 7, y: 1 }, 1);
@@ -210,7 +213,10 @@ test('every log line records which action wrote it', () => {
 test('the first line of an action is marked, and later ones are not', () => {
   const entry = getRuleset('territory');
   const eng = new Engine(entry.ruleset, {
-    players: entry.defaultPlayers.slice(0, 2), config: { scatterStacks: 1 }, seed: 4,
+    players: entry.defaultPlayers.slice(0, 2), seed: 4,
+    // The classic settings: this test scripts explicit produce actions,
+    // which exist only when the production step does.
+    config: { scatterStacks: 1, autoProduce: false, moveFactor: 1 },
   });
   eng.applyAction({ type: 'place', x: 0, y: 0 }, 0);
   const leads = eng.log.filter(l => l.lead);
@@ -222,7 +228,10 @@ test('rewinding to a line lands where a player would expect', () => {
   const entry = getRuleset('territory');
   const fresh = () => {
     const e = new Engine(entry.ruleset, {
-      players: entry.defaultPlayers.slice(0, 2), config: { scatterStacks: 1 }, seed: 4,
+      players: entry.defaultPlayers.slice(0, 2), seed: 4,
+      // Classic settings: this test uses a produce action, which needs
+      // the production step to exist.
+      config: { scatterStacks: 1, autoProduce: false, moveFactor: 1 },
     });
     e.applyAction({ type: 'place', x: 0, y: 0 }, 0);
     return e;

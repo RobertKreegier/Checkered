@@ -52,7 +52,12 @@ function gameFor(id) {
   const entry = getRuleset(id);
   const eng = new Engine(entry.ruleset, {
     players: entry.defaultPlayers.slice(0, Math.max(2, entry.minPlayers)),
-    config: id === 'territory' ? { scatterStacks: 1 } : {},
+    // Territory runs with its production step switched on here: several
+    // tests below are about what happens when a step changes, and the
+    // shipped defaults produce automatically and have no such moment.
+    config: id === 'territory'
+      ? { scatterStacks: 1, autoProduce: false, moveFactor: 1 }
+      : {},
     seed: 3,
   });
   if (!fresh) {

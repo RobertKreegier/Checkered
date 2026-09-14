@@ -28,7 +28,7 @@ const config = {
   knightSize: 2, campSize: 4, townSize: 8,
   startCamp: 8, campSpacing: 4,
   prodFactor: 1, costArmory: 2, costPawn: 4, costKnight: 8,
-  moveFactor: 1, moveBonus: 0,
+  moveFactor: 0, moveBonus: 0,
   attackDamage: 1, spendDamage: 1, defenderBlocks: true, attackerDies: true,
   armoryStrike: 2,
   pawnSupport: true, lockLastCamp: true, autoEndProduction: true,
@@ -36,6 +36,8 @@ const config = {
   scatterCaches: 0, cacheMax: 3, scatterStacks: 6, stackMax: 5,
   scatterRadius: 12, scatterClear: 4, recruitNeutral: true, recruitAbandoned: true,
   burnArmory: 1, forgeCost: 1, spillCost: 2, meltCost: 2,
+  autoProduce: true,   // skip the production step; stacks make armory on their own
+  buildRange: 1,       // how far a melted chip may be placed (0 = on the stack only)
 };
 
 const configSpec = [
@@ -54,8 +56,10 @@ const configSpec = [
     ['costArmory', 'Cost of an armory chip', 'num'],
     ['costPawn', 'Cost of a pawn', 'num'],
     ['costKnight', 'Cost of a knight', 'num'],
+    ['autoProduce', 'Skip the step — stacks make armory on their own', 'bool'],
     ['autoEndProduction', 'End the step when nothing can be produced', 'bool'],
     ['meltCost', 'Armory chips melted into one unit chip', 'num'],
+    ['buildRange', 'How far a melted chip may be placed', 'num'],
   ]],
   ['Moves', [
     ['moveFactor', 'Moves per square held', 'num'],
@@ -307,7 +311,51 @@ function scatterNeutrals(s, rng, log) {
 }
 
 /* ---------- phase transitions ---------- */
+
+/**
+ * Every stack makes as much armory as it can, and the step is over.
+ *
+ * Playtesting found the production step was mostly clicking through a
+ * decision that had only one sensible answer. The arithmetic bears that
+ * out: a pawn costs four production points, and four points is also two
+ * armory, which melts into exactly one unit chip. Producing armory and
+ * melting it is the same rate as producing the unit outright — so armory
+ * is never the worse choice, and there is nothing to decide.
+ *
+ * The one thing direct production could do that armory could not was
+ * place a chip on a *neighbouring* square for free. That is why melting
+ * can now build outward (see `buildRange`): without it, skipping the
+ * step would have quietly made expansion cost a move it never cost
+ * before, which with moves scarce would have slowed the game badly.
+ */
+function produceAutomatically(s, log) {
+  const c = cfg(s);
+  let made = 0;
+  for (const [k, st] of Object.entries(s.board)) {
+    if (st.o !== s.cur || st.u < c.knightSize) continue;
+    const points = Math.floor(st.u * c.prodFactor);
+    const armory = c.costArmory > 0 ? Math.floor(points / c.costArmory) : 0;
+    if (armory <= 0) continue;
+    st.a += armory;
+    made += armory;
+  }
+  if (made) {
+    log.push(`${s.players[s.cur].name}'s stacks produced ${made} armory.`);
+  }
+  return made;
+}
+
 function startProduction(s, log) {
+  const cSkip = cfg(s);
+  if (cSkip.autoProduce) {
+    // No step at all: make the armory and go straight to moving.
+    log.push(`— ${s.players[s.cur].name}'s play begins —`);
+    produceAutomatically(s, log);
+    s.phase = 'production';        // finishProduction expects to be leaving it
+    s.budget = {};
+    finishProduction(s, log);
+    return;
+  }
   s.phase = 'production';
   s.budget = {};
   const c = cfg(s);
@@ -359,7 +407,10 @@ function finishProduction(s, log) {
   s.phase = 'move';
   s.territory = occupied(s, s.cur);
   s.moves = Math.floor(s.territory * c.moveFactor) + c.moveBonus;
-  log.push(`${s.players[s.cur].name} holds ${s.territory} square${s.territory === 1 ? '' : 's'} — ${s.moves} moves.`);
+  log.push(c.moveFactor > 0
+    ? `${s.players[s.cur].name} holds ${s.territory} square${s.territory === 1 ? '' : 's'} — ${s.moves} moves.`
+    : `${s.players[s.cur].name} holds ${s.territory} square${s.territory === 1 ? '' : 's'}; `
+      + 'moves come from burning armory.');
   if (c.autoEndMove && s.moves <= 0 && !canBurnAnywhere(s)) {
     log.push('No moves to make.');
     finishTurn(s, log, null);
@@ -621,23 +672,27 @@ names:
   rules above, a town is essentially 2 camps put together, and can produce the
   same units or armory as two camps can.
 
-## 1 · Production step
+## 1 · Production
 
-Each of your stacks of two or more chips gets production points equal to its
-unit chips, spent freely on itself or any neighbour:
+Production happens on its own, at the start of your play. Every stack of two or
+more unit chips makes armory — one chip for every two units it holds. A knight
+makes one, a camp two, a town four. Pawns make nothing.
 
-- armory chip — \`2\` points (must land on a stack of yours)
-- pawn — \`4\` points
-- knight — \`8\` points
-
-A knight makes one armory. A camp makes two armory or one pawn. A town makes
-four armory, two pawns, one knight, or any mix its chips allow.
+There is nothing to decide here, which is why there is no step for it. A pawn
+used to cost four production points, and four points is also two armory, which
+melts into exactly one unit chip — so producing armory and beating it into a
+chip was always the same rate as producing the chip outright. Armory was never
+the worse choice. Now it is simply the only one, and what you do with it is
+where the decisions are.
 
 ## 2 · Move step
 
-You get one move per square you occupy at the start of the step. One move
-shifts one chip to one adjacent square, and that counts armory chips too: a
-knight carrying one armory is three chips, so walking the whole thing one
+**Moves come from armory.** Holding ground does not give you moves by itself;
+burning an armory chip gives you one. So your production *is* your clock, and
+every move you make is production you chose not to keep.
+
+One move shifts one chip to one adjacent square, and that counts armory chips
+too: a knight carrying one armory is three chips, so walking the whole thing one
 square costs three moves.
 
 Armory rides only where units go. Sent on its own it is either passed to
@@ -674,6 +729,22 @@ nothing. You can also simply march onto one and absorb it. Camps must stand
 clear of one another, but nothing stops you pitching one right beside a neutral
 stack — and the good ground tends to be spoken for early.
 
+## What pawns are for
+
+A pawn makes nothing and, on its own, holds a square that pays nothing. It is
+still worth having:
+
+- **A road.** Walking one chip onto a square a pawn already holds costs one
+  move, not two, and turns that pawn into a knight when it arrives. A line of
+  pawns is a road a knight can run at half price.
+- **A wall.** A stack cannot walk through you. A line of pawns is a line an
+  advance has to go round, or spend chips breaking.
+- **Salvage.** Pawns left standing after a battle, and pawns abandoned by
+  someone who could not support them, are there for whoever reaches them.
+
+What a pawn is not, any more, is an income. Spreading thin buys you ground and
+nothing else, and ground no longer pays.
+
 ## Where a lone chip may step
 
 A single unit chip can only step onto ground that something of yours already
@@ -693,16 +764,20 @@ enemy pawn from its support and end your play next to it, it comes over to you.
 Where two rivals both stand beside a stranded pawn, the one with more unit chips
 against it takes it.
 
-## Trading armory for time
+## Trading armory for time, and for ground
 
 Armory, moves, and chips are one substance in three shapes. During the move step
 you can **burn** an armory chip off a stack for a move, spend a move to **forge**
-a chip back onto one, or beat **two armory into a unit chip** on the stack that
-holds them.
+a chip back onto one, or beat **two armory into a unit chip**.
 
-That last trade is a camp's own arithmetic run backwards: two knights make two
-armory, and a camp makes a pawn, so two armory and a pawn are the same thing said
-twice.
+That last trade — **building** — can place its new chip on the stack that paid
+for it, or on any square touching that stack: your own ground, empty ground, or
+a loose armory pile, which you pick up in the process. It cannot be dropped on a
+rival; putting chips on an enemy square is an attack, and attacks cost moves.
+
+Building outward is how you expand without spending your clock. A camp with two
+armory can put a pawn on the next square over for nothing but the armory, and a
+pawn placed that way is a step of road, a piece of wall, and a square held.
 
 Whatever moves you still hold when the play ends don't vanish — they spill onto
 the ground near your own squares as loose armory, one chip per two moves, free
@@ -828,7 +903,24 @@ const territory = {
 
         if (c.burnArmory > 0 && st.a >= 1) out.push({ type: 'burn', x, y });
         if (c.forgeCost > 0 && st.u >= 1 && s.moves >= c.forgeCost) out.push({ type: 'forge', x, y });
-        if (c.meltCost >= 1 && st.a >= c.meltCost) out.push({ type: 'melt', x, y });
+        if (c.meltCost >= 1 && st.a >= c.meltCost) {
+          // Melting places a unit chip. It may land on the stack that
+          // paid for it, or — within buildRange — on a neighbouring
+          // square, which is what direct production used to buy and
+          // what keeps expansion from costing a move it never did.
+          out.push({ type: 'melt', x, y, tx: x, ty: y });
+          if (c.buildRange >= 1) {
+            for (const [i, j] of nbs(s, x, y)) {
+              const t = at(s, i, j);
+              // Onto empty ground, your own stack, or a loose pile —
+              // the same places production could put a pawn. Never onto
+              // a rival: that would be an attack, and attacks are moves.
+              if (!t || t.o === s.cur || (t.o === null && t.u === 0)) {
+                out.push({ type: 'melt', x, y, tx: i, ty: j });
+              }
+            }
+          }
+        }
       }
       out.push({ type: 'endTurn' });
       return out;
@@ -859,7 +951,18 @@ const territory = {
       if (a.type === 'endTurn') return true;
       if (a.type === 'burn') return !!st && st.o === s.cur && st.a >= 1 && c.burnArmory > 0;
       if (a.type === 'forge') return !!st && st.o === s.cur && st.u >= 1 && c.forgeCost > 0 && s.moves >= c.forgeCost;
-      if (a.type === 'melt') return !!st && st.o === s.cur && c.meltCost >= 1 && st.a >= c.meltCost;
+      if (a.type === 'melt') {
+        if (!st || st.o !== s.cur || c.meltCost < 1 || st.a < c.meltCost) return false;
+        const tx = a.tx ?? a.x, ty = a.ty ?? a.y;
+        if (tx === a.x && ty === a.y) return true;
+        // There is no standalone adjacency helper, and inventing one
+        // that disagreed with nbs() about diagonals would be a subtle
+        // way to let an illegal build through. Ask nbs() itself.
+        const touching = nbs(s, a.x, a.y).some(([i, j]) => i === tx && j === ty);
+        if (c.buildRange < 1 || !touching) return false;
+        const t = at(s, tx, ty);
+        return !t || t.o === s.cur || (t.o === null && t.u === 0);
+      }
       if (a.type !== 'move') return false;
       if (!Number.isInteger(a.nU) || !Number.isInteger(a.nA) || a.nU < 0 || a.nA < 0) return false;
       const spend = a.spend || 0;
@@ -920,8 +1023,27 @@ const territory = {
       }
       case 'melt': {
         const st = at(s, a.x, a.y);
-        st.a -= c.meltCost; st.u += 1;
-        log.push(`${s.players[s.cur].name} beat ${c.meltCost} armory into a unit chip at ${a.x},${a.y} (${tier(s, st.u)}).`);
+        const tx = a.tx ?? a.x, ty = a.ty ?? a.y;
+        st.a -= c.meltCost;
+
+        let target = at(s, tx, ty);
+        let claimed = 0;
+        if (!target) {
+          target = { o: s.cur, u: 0, a: 0 };
+          s.board[K(tx, ty)] = target;
+        } else if (target.o === null) {
+          // A loose pile is picked up by whatever you build on it, the
+          // same as walking a chip onto it would.
+          claimed = target.a;
+          target.o = s.cur;
+        }
+        target.u += 1;
+
+        const here = tx === a.x && ty === a.y;
+        log.push(here
+          ? `${s.players[s.cur].name} beat ${c.meltCost} armory into a unit chip at ${a.x},${a.y} (${tier(s, target.u)}).`
+          : `${s.players[s.cur].name} built a unit chip at ${tx},${ty} from ${a.x},${a.y} (${tier(s, target.u)})`
+            + (claimed ? `, picking up ${claimed} loose armory.` : '.'));
         break;
       }
       case 'endTurn':
@@ -959,7 +1081,17 @@ const territory = {
       }
       case 'burn': return { from, to: from, label: 'Burn armory for a move', group: 'trade' };
       case 'forge': return { from, to: from, label: 'Forge armory', group: 'trade' };
-      case 'melt': return { from, to: from, label: 'Melt armory into a chip', group: 'trade' };
+      case 'melt': {
+        const tx = a.tx ?? a.x, ty = a.ty ?? a.y;
+        const here = tx === a.x && ty === a.y;
+        return {
+          from,
+          to: { x: tx, y: ty },
+          label: here ? `Melt ${cfg(state).meltCost} armory into a chip here`
+            : `Build a chip at ${tx},${ty}`,
+          group: 'build',
+        };
+      }
       case 'endProduction': return { from: null, to: null, label: 'Done producing', group: 'phase' };
       case 'endTurn': return { from: null, to: null, label: 'End play', group: 'phase' };
       default: return { from: null, to: null, label: a.type };
@@ -1041,7 +1173,20 @@ const territory = {
       survival: 80,    // holding any camp at all
       stranded: 14,    // a pawn about to be abandoned is nearly lost already
       reach: 0.4,      // stored moves are what let you strike far away
+      ground: 2.5,     // see below — only when a square earns nothing itself
     };
+
+    // What a square is worth in itself.
+    //
+    // When a square yields a move, its value is already counted in
+    // income below and adding more would count it twice. When it yields
+    // nothing — the shipped economy, where moves come only from burning
+    // armory — ground still has real worth that income cannot see: a
+    // line of pawns walls off an advance, a pawn a knight steps onto
+    // makes the road cost one move a square instead of two, and every
+    // held square is somewhere a chip can be built. Without this the
+    // evaluator would price a wall at nothing and never build one.
+    const groundWorth = c.moveFactor > 0 ? 0 : W.ground;
 
     const count = state.players.map(() => ({
       squares: 0, units: 0, armory: 0, armoryIncome: 0,
@@ -1098,6 +1243,7 @@ const territory = {
       const insured = Math.min(t.camps, W.campCap);
 
       return W.income * income
+        + groundWorth * t.squares
         + W.armory * t.armory
         + W.reach * t.armory * c.burnArmory
         + W.unit * t.units

@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Engine } from '../src/engine.js';
-import territory from '../rulesets/territory.js';
+import { Engine } from '../root/src/engine.js';
+import territory from '../root/rulesets/territory.js';
 
 const { K, at, tier } = territory.helpers;
 
@@ -13,10 +13,35 @@ const PLAYERS = [
   { name: 'Cobalt', unit: '#3E8FD0', armory: '#8FD8E8' },
 ];
 
-/** A game seated and ready, still in the placement phase. */
+/**
+ * A game seated and ready, still in the placement phase.
+ *
+ * These helpers ask for the **classic** economy — an interactive
+ * production step, and a move for every square held. Both are still
+ * supported settings, and most of the rules below (production costs,
+ * budgets, the move budget) are about them, so they are tested under
+ * them explicitly rather than implicitly.
+ *
+ * The current defaults are different: production happens on its own and
+ * moves come only from burning armory. Those are covered separately, in
+ * "the armory economy" near the end of this file.
+ */
 function seated(config = {}) {
   return new Engine(territory, {
     // Scatter off by default so tests see a board they fully control.
+    config: {
+      scatterStacks: 0, scatterCaches: 0,
+      autoProduce: false, moveFactor: 1,
+      ...config,
+    },
+    players: PLAYERS,
+    seed: 42,
+  });
+}
+
+/** A game under the shipped defaults: automatic production, no move per square. */
+function modern(config = {}) {
+  return new Engine(territory, {
     config: { scatterStacks: 0, scatterCaches: 0, ...config },
     players: PLAYERS,
     seed: 42,
@@ -364,7 +389,12 @@ test('different seeds scatter differently', () => {
 
 test('a full game replays to an identical fingerprint', () => {
   const actions = [];
-  const setup = { config: { scatterStacks: 3 }, players: PLAYERS, seed: 5150 };
+  // Classic settings: this game is scripted with explicit produce
+  // actions, which only exist when the production step does.
+  const setup = {
+    config: { scatterStacks: 3, autoProduce: false, moveFactor: 1 },
+    players: PLAYERS, seed: 5150,
+  };
   const play = record => {
     const eng = new Engine(territory, setup);
     const run = (action, actorId) => {
@@ -514,22 +544,34 @@ test('the same seed lays the same ground', () => {
 
 /* ---------- the rules text has to match the game ---------- */
 
-test('the costs quoted in the rules are the costs the game charges', () => {
-  // Rules ship beside the code so the two can't drift. Numbers are the
-  // easiest thing to get wrong and the cheapest to check.
+test('the rates quoted in the rules are the rates the game charges', () => {
+  // Rules ship beside the code so the two can't drift. This guard has
+  // earned its place twice now: it caught the rules still describing
+  // the old opening, and then the production costs after the step that
+  // charged them was removed.
   const text = territory.rulesText;
   const c = territory.config;
 
-  assert.ok(text.includes(`armory chip \u2014 \`${c.costArmory}\` points`),
-    `the rules should charge ${c.costArmory} points for an armory chip`);
-  assert.ok(text.includes(`pawn \u2014 \`${c.costPawn}\` points`),
-    `the rules should charge ${c.costPawn} points for a pawn`);
-  assert.ok(text.includes(`knight \u2014 \`${c.costKnight}\` points`),
-    `the rules should charge ${c.costKnight} points for a knight`);
-  assert.ok(text.includes(`${c.meltCost} armory`),
-    'the melt rate in the rules should match meltCost');
-  assert.ok(text.includes('one chip per two moves') && c.spillCost === 2,
+  const flow = text.replace(/\s+/g, ' ');
+  assert.ok(flow.includes(`one chip for every ${c.costArmory === 2 ? 'two' : c.costArmory} units`),
+    'the armory rate in the rules should match costArmory');
+  assert.ok(flow.includes(`${c.meltCost === 2 ? 'two' : c.meltCost} armory into a unit chip`),
+    'the build rate in the rules should match meltCost');
+  assert.ok(flow.includes('one chip per two moves') && c.spillCost === 2,
     'the spill rate in the rules should match spillCost');
+  assert.ok(flow.includes('Moves come from armory') && c.moveFactor === 0,
+    'the rules should say where moves come from, and be right about it');
+});
+
+test('the rules describe building outward, which the game allows', () => {
+  const text = territory.rulesText;
+  assert.ok(territory.config.buildRange >= 1);
+  // The rules are wrapped prose, so any phrase may straddle a newline.
+  const flowing = text.replace(/\s+/g, ' ');
+  assert.match(flowing, /on any square touching that stack/i,
+    'a rule players will rely on has to be written down');
+  assert.match(flowing, /cannot be dropped on a rival/i,
+    'and so does its one limit');
 });
 
 test('the rules describe the stack tiers the game actually uses', () => {
@@ -555,14 +597,14 @@ test('the rules describe the opening the game actually plays', () => {
 
 /* ---------- the evaluator models the game's economy ---------- */
 
-test('a knight is worth the same as two spread pawns', () => {
-  // From playtesting: a knight yields one move for its square plus one
-  // for the armory it produces, which is exactly what two pawns on two
-  // squares yield. That equivalence is what makes the pawn-versus-knight
-  // choice a real trade, and an evaluator that breaks it is not looking
-  // at the same game the player is.
+test('under the classic economy a knight equals two spread pawns', () => {
+  // A knight yields one move for its square plus one for the armory it
+  // produces, which is exactly what two pawns on two squares yield.
+  // That equivalence is what made the pawn-versus-knight choice a real
+  // trade, and it still holds wherever a square is worth a move.
   const eng = new Engine(territory, {
-    players: [{ name: 'A' }, { name: 'B' }], config: { scatterStacks: 0 }, seed: 3,
+    players: [{ name: 'A' }, { name: 'B' }],
+    config: { scatterStacks: 0, moveFactor: 1 }, seed: 3,
   });
   const position = board => ({ ...eng.state, board, cur: 0 });
 
@@ -573,6 +615,25 @@ test('a knight is worth the same as two spread pawns', () => {
     territory.evaluate(twoPawns, 0),
     territory.evaluate(oneKnight, 0),
     'the two should be worth the same',
+  );
+});
+
+test('under the shipped economy a knight beats two spread pawns', () => {
+  // With no move per square, only stacks of two or more generate
+  // anything, so the equivalence above deliberately breaks: a knight
+  // earns and two pawns do not. The evaluator has to agree, or it will
+  //价 sprawl it can no longer afford.
+  const eng = new Engine(territory, {
+    players: [{ name: 'A' }, { name: 'B' }], config: { scatterStacks: 0 }, seed: 3,
+  });
+  const position = board => ({ ...eng.state, board, cur: 0 });
+
+  const twoPawns = position({ '0,0': { o: 0, u: 1, a: 0 }, '1,0': { o: 0, u: 1, a: 0 } });
+  const oneKnight = position({ '0,0': { o: 0, u: 2, a: 0 } });
+
+  assert.ok(
+    territory.evaluate(oneKnight, 0) > territory.evaluate(twoPawns, 0),
+    'a knight earns where two pawns do not',
   );
 });
 
@@ -636,4 +697,131 @@ test('banked armory counts toward what a position is worth', () => {
   });
   const position = a => ({ ...eng.state, board: { '0,0': { o: 0, u: 2, a } }, cur: 0 });
   assert.ok(territory.evaluate(position(3), 0) > territory.evaluate(position(0), 0));
+});
+
+/* ============================================================
+   THE ARMORY ECONOMY — the shipped defaults
+   ============================================================
+ * Production happens on its own, and moves come only from burning
+ * armory. The reasoning, from playtesting: a pawn costs four production
+ * points, and four points is also two armory, which melts into exactly
+ * one unit chip. Producing armory and melting it is the same rate as
+ * producing the unit outright, so armory was never the worse choice and
+ * the step had nothing to decide.
+ */
+
+test('there is no production step to click through', () => {
+  const eng = modern();
+  eng.applyAction({ type: 'place', x: 0, y: 0 }, 0);
+  eng.applyAction({ type: 'place', x: 10, y: 0 }, 1);
+  assert.equal(eng.state.phase, 'move', 'play should begin at the move step');
+  assert.equal(eng.legalActions(0).some(a => a.type === 'produce'), false);
+});
+
+test('stacks make their armory on their own', () => {
+  const eng = modern();
+  eng.applyAction({ type: 'place', x: 0, y: 0 }, 0);
+  eng.applyAction({ type: 'place', x: 10, y: 0 }, 1);
+  // A starting camp of eight makes four armory: eight points, two a chip.
+  assert.equal(eng.state.board['0,0'].a, 4);
+  assert.match(eng.log.map(l => l.text).join(' '), /produced 4 armory/);
+});
+
+test('a pawn still makes nothing', () => {
+  const eng = modern();
+  setBoard(eng, { '0,0': { o: 0, u: 1, a: 0 }, '5,0': { o: 1, u: 8, a: 0 } });
+  eng.state.phase = 'move';
+  eng.state.cur = 1;
+  eng.applyAction({ type: 'endTurn' }, 1);
+  assert.equal(eng.state.board['0,0'].a, 0, 'one chip is below the production floor');
+});
+
+test('moves come from armory, not from ground', () => {
+  const eng = modern();
+  eng.applyAction({ type: 'place', x: 0, y: 0 }, 0);
+  eng.applyAction({ type: 'place', x: 10, y: 0 }, 1);
+  assert.equal(eng.state.moves, 0, 'holding a square no longer grants a move');
+  assert.ok(eng.legalActions(0).some(a => a.type === 'burn'),
+    'but the armory just produced can be burned for one');
+});
+
+test('an armory chip still buys exactly one move', () => {
+  const eng = modern();
+  eng.applyAction({ type: 'place', x: 0, y: 0 }, 0);
+  eng.applyAction({ type: 'place', x: 10, y: 0 }, 1);
+  const before = eng.state.moves;
+  eng.applyAction({ type: 'burn', x: 0, y: 0 }, 0);
+  assert.equal(eng.state.moves, before + 1);
+  assert.equal(eng.state.board['0,0'].a, 3);
+});
+
+/* ---------- building outward ---------- */
+
+test('melting can place its chip on a neighbouring square', () => {
+  // This is what direct production used to buy: a chip onto adjacent
+  // ground for no moves. Without it, skipping the production step would
+  // have quietly made expansion cost a move it never cost before.
+  const eng = modern();
+  eng.applyAction({ type: 'place', x: 0, y: 0 }, 0);
+  eng.applyAction({ type: 'place', x: 10, y: 0 }, 1);
+
+  const moves = eng.state.moves;
+  eng.applyAction({ type: 'melt', x: 0, y: 0, tx: 1, ty: 0 }, 0);
+
+  assert.equal(eng.state.board['1,0'].u, 1, 'a chip should appear next door');
+  assert.equal(eng.state.board['1,0'].o, 0, 'and it should be yours');
+  assert.equal(eng.state.moves, moves, 'building costs armory, never moves');
+  assert.equal(eng.state.board['0,0'].a, 2, 'and it costs the melt price');
+});
+
+test('a build may land on the stack that paid for it', () => {
+  const eng = modern();
+  eng.applyAction({ type: 'place', x: 0, y: 0 }, 0);
+  eng.applyAction({ type: 'place', x: 10, y: 0 }, 1);
+  eng.applyAction({ type: 'melt', x: 0, y: 0, tx: 0, ty: 0 }, 0);
+  assert.equal(eng.state.board['0,0'].u, 9);
+});
+
+test('a build cannot be dropped on a rival', () => {
+  // Building onto an enemy would be an attack that costs no moves.
+  const eng = modern();
+  setBoard(eng, { '0,0': { o: 0, u: 8, a: 4 }, '1,0': { o: 1, u: 2, a: 0 } });
+  eng.state.phase = 'move';
+  assert.equal(eng.isLegal({ type: 'melt', x: 0, y: 0, tx: 1, ty: 0 }, 0), false);
+});
+
+test('a build cannot reach past a neighbour', () => {
+  const eng = modern();
+  setBoard(eng, { '0,0': { o: 0, u: 8, a: 4 } });
+  eng.state.phase = 'move';
+  assert.equal(eng.isLegal({ type: 'melt', x: 0, y: 0, tx: 3, ty: 0 }, 0), false);
+});
+
+test('building onto loose armory picks the pile up', () => {
+  const eng = modern();
+  setBoard(eng, {
+    '0,0': { o: 0, u: 8, a: 4 },
+    '1,0': { o: null, u: 0, a: 3 },
+  });
+  eng.state.phase = 'move';
+  eng.applyAction({ type: 'melt', x: 0, y: 0, tx: 1, ty: 0 }, 0);
+  const square = eng.state.board['1,0'];
+  assert.equal(square.o, 0);
+  assert.equal(square.u, 1);
+  assert.equal(square.a, 3, 'the loose pile comes with the ground');
+});
+
+test('building outward can be switched off', () => {
+  const eng = modern({ buildRange: 0 });
+  setBoard(eng, { '0,0': { o: 0, u: 8, a: 4 } });
+  eng.state.phase = 'move';
+  assert.equal(eng.isLegal({ type: 'melt', x: 0, y: 0, tx: 1, ty: 0 }, 0), false);
+  assert.ok(eng.isLegal({ type: 'melt', x: 0, y: 0, tx: 0, ty: 0 }, 0),
+    'melting onto its own stack still works');
+});
+
+test('the classic economy is still playable as a setting', () => {
+  const eng = started();     // seated() asks for autoProduce off, moveFactor 1
+  assert.equal(eng.state.phase, 'production');
+  assert.ok(eng.legalActions(0).some(a => a.type === 'produce'));
 });
